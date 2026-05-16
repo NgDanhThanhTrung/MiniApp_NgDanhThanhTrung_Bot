@@ -84,6 +84,23 @@ function startSelfPingMechanism() {
 let userDatabase = new Map();
 const BACKUP_INTERVAL = 5 * 60 * 1000;
 
+function verifyTelegramWebAppData(initDataString) {
+    try {
+        const urlParams = new URLSearchParams(initDataString);
+        const hash = urlParams.get('hash');
+        urlParams.delete('hash');
+        const sortedParams = Array.from(urlParams.entries()).map(([key, value]) => `${key}=${value}`).sort().join('\n');
+        const secretKey = crypto.createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
+        const calculatedHash = crypto.createHmac('sha256', secretKey).update(sortedParams).digest('hex');
+        if (calculatedHash === hash) {
+            return JSON.parse(urlParams.get('user'));
+        }
+        return null;
+    } catch (e) {
+        return null;
+    }
+}
+
 function syncUserInMemory(userId, userData) {
     const todayStr = new Date().toISOString().split('T')[0];
     
@@ -92,8 +109,8 @@ function syncUserInMemory(userId, userData) {
             id: userId,
             username: userData.username || '',
             first_name: userData.first_name || 'Người chơi',
-            coins: 50000, // Tặng sẵn 50,000 Xu tài khoản trải nghiệm ban đầu
-            spinsLeft: 3,
+            coins: 50000, // Tặng sẵn 50,000 Xu tài khoản trải nghiệm ban đầu giống app.js
+            spinsLeft: 3,  // 3 Lượt quay khởi tạo đầu game
             lastSpinTimestamp: 0,
             lastAdsTimestamp: 0,
             dailySpinsCount: 0,
@@ -121,6 +138,21 @@ function syncUserInMemory(userId, userData) {
 // ==========================================
 // 4. ĐỊNH TUYẾN WEB API (KẾT NỐI FRONTEND)
 // ==========================================
+
+// Đồng bộ cổng API kéo dữ liệu chân thực từ chuỗi mã hóa initData bảo mật phía app.js gửi sang
+app.post('/api/user-data', (req, res) => {
+    const { initData } = req.body;
+    const tgUser = verifyTelegramWebAppData(initData);
+    
+    if (!tgUser) {
+        return res.status(403).json({ error: "Xác thực lớp bảo mật Telegram thất bại!" });
+    }
+
+    const user = syncUserInMemory(tgUser.id, tgUser);
+    res.json(user);
+});
+
+// Giữ cổng dự phòng profile hỗ trợ quá trình test mượt mà
 app.post('/api/user/profile', (req, res) => {
     const { telegramId, username, firstName } = req.body;
     if (!telegramId) return res.status(400).json({ error: "Thiếu thông tin định danh!" });
@@ -129,16 +161,7 @@ app.post('/api/user/profile', (req, res) => {
     res.json(user);
 });
 
-// Xử lý logic tính toán vòng quay an toàn tại Server RAM
-app.post('/api/user-data', (req, res) => {
-    // Giữ nguyên Router gốc để phục vụ cơ chế kiểm tra đồng bộ nếu có hệ thống cũ kết nối
-    const { telegramId } = req.body;
-    if (!telegramId) return res.status(400).json({ error: "Yêu cầu không hợp lệ" });
-    const user = userDatabase.get(parseInt(telegramId, 10));
-    if (!user) return res.status(404).json({ error: "User không tồn tại" });
-    res.json(user);
-});
-
+// Tiếp nhận xử lý tính toán vòng quay an toàn tập trung từ xa
 app.post('/api/user/spin', (req, res) => {
     const { telegramId } = req.body;
     const uid = parseInt(telegramId, 10);
@@ -169,16 +192,26 @@ app.post('/api/user/spin', (req, res) => {
     });
 });
 
-app.post('/api/user/update', async (req, res) => {
-    const { telegramId, action, withdrawMethod, withdrawAddress, withdrawAmount } = req.body;
-    const uid = parseInt(telegramId, 10);
-    const user = userDatabase.get(uid);
+// Tuyến đường sạc Xu quảng cáo AdsGram hoặc cập nhật tạo đơn rút tiền
+app.post('/api/update-assets', async (req, res) => {
+    const { initData, action, withdrawMethod, withdrawAddress, withdrawAmount } = req.body;
+    const tgUser = verifyTelegramWebAppData(initData);
+    if (!tgUser) return res.status(403).json({ error: "Xác thực bảo mật Telegram thất bại!" });
 
-    if (!user) return res.status(404).json({ error: "User không tồn tại!" });
+    const user = userDatabase.get(tgUser.id);
+    if (!user) return res.status(404).json({ error: "Tài khoản không tồn tại trên hệ thống RAM!" });
+
     const now = Date.now();
 
     switch (action) {
-        case 'watch_ads':
+        case 'spin_start': // Hỗ trợ trừ lượt đồng bộ từ xa nếu frontend có gọi lệnh khóa
+            if (user.spinsLeft <= 0) return res.status(400).json({ error: "Hết lượt quay!" });
+            user.spinsLeft -= 1;
+            user.dailySpinsCount += 1;
+            user.lastSpinTimestamp = now;
+            break;
+
+        case 'watch_ads_success':
             if (user.dailyAdsCount >= SERVER_CONFIG.MAX_DAILY_ADS) {
                 return res.status(400).json({ error: "Đã hết hạn mức xem Ads hôm nay!" });
             }
@@ -225,6 +258,23 @@ app.post('/api/user/update', async (req, res) => {
             return res.status(400).json({ error: "Hành động cấu hình không hợp lệ!" });
     }
 
+    res.json(user);
+});
+
+// Hỗ trợ tuyến đường phụ đồng bộ cập nhật tài sản thô (Dành cho bản build test local cũ)
+app.post('/api/user/update', async (req, res) => {
+    const { telegramId, action, withdrawMethod, withdrawAddress, withdrawAmount } = req.body;
+    const uid = parseInt(telegramId, 10);
+    const user = userDatabase.get(uid);
+    if (!user) return res.status(404).json({ error: "User không tồn tại!" });
+
+    const now = Date.now();
+    if (action === 'watch_ads') {
+        user.coins += 12000; user.spinsLeft += 1; user.dailyAdsCount += 1; user.lastAdsTimestamp = now;
+    } else if (action === 'withdraw_request') {
+        const amount = parseInt(withdrawAmount, 10);
+        if (!isNaN(amount) && amount <= user.coins) user.coins -= amount;
+    }
     res.json(user);
 });
 
@@ -277,7 +327,7 @@ bot.command('saoluu', isAdminMiddleware, async (ctx) => {
         'Username': u.username ? `@${u.username}` : 'Không có', 
         'Tên': u.first_name, 
         'Số Dư Xu': u.coins, 
-        'Lượt Quay': u.spinsLeft
+        'Lượt Quay Còn Lại': u.spinsLeft
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(rows);
@@ -327,14 +377,15 @@ bot.on('message', isAdminMiddleware, async (ctx) => {
             const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
             let count = 0;
             rows.forEach(r => {
-                const uid = parseInt(r['ID Telegram'] || r['ID Người Dùng']);
+                // Đồng bộ linh hoạt tên cột nạp từ file Excel vào RAM không lo lệch pha
+                const uid = parseInt(r['ID Telegram'] || r['ID Người Dùng'], 10);
                 if (uid) {
                     userDatabase.set(uid, { 
                         id: uid, 
                         username: r['Username'] ? r['Username'].replace('@','') : '', 
                         first_name: r['Tên'] || 'Người chơi', 
                         coins: parseInt(r['Số Dư Xu']) || 0, 
-                        spinsLeft: parseInt(r['Lượt Quay']) || 0, 
+                        spinsLeft: parseInt(r['Lượt Quay Còn Lại'] || r['Lượt Quay'], 10) || 3, 
                         lastSpinTimestamp: 0,
                         lastAdsTimestamp: 0,
                         dailySpinsCount: 0,
