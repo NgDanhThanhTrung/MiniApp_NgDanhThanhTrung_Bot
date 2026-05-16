@@ -1,5 +1,6 @@
 /* ========================================== */
-/* 1. CORES & TELEGRAM THEME SYNCING          */\n/* ========================================== */
+/* 1. CORES & TELEGRAM THEME SYNCING          */
+/* ========================================== */
 :root {
     --tg-bg-color: var(--tg-theme-bg-color, #17212b);
     --tg-text-color: var(--tg-theme-text-color, #f5f5f5);
@@ -8,6 +9,7 @@
     --tg-button-color: var(--tg-theme-button-color, #2f6ea5);
     --tg-button-text-color: var(--tg-theme-button-text-color, #ffffff);
     --tg-secondary-bg-color: var(--tg-theme-secondary-bg-color, #24303f);
+    --primary-gradient: linear-gradient(135deg, #2f6ea5, #1d4b73);
 }
 
 * {
@@ -15,7 +17,7 @@
     margin: 0;
     padding: 0;
     -webkit-tap-highlight-color: transparent;
-    user-select: none; /* Ngăn chặn việc bôi đen màn hình khi click nhanh */
+    user-select: none; /* Ngăn chặn bôi đen màn hình khi click nhanh */
 }
 
 body {
@@ -37,34 +39,34 @@ body {
 }
 
 /* ========================================== */
-/* 2. MAIN HEADER & BALANCE STYLES           */
+/* 2. MAIN HEADER & BALANCE STYLES            */
 /* ========================================== */
 .main-header {
     background: var(--tg-secondary-bg-color);
     padding: 16px;
     border-bottom-left-radius: 20px;
     border-bottom-right-radius: 20px;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     z-index: 10;
 }
 
 .user-profile {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 14px;
+    gap: 10px;
+    margin-bottom: 12px;
 }
 
 .avatar-placeholder {
-    width: 42px;
-    height: 42px;
+    width: 36px;
+    height: 36px;
     background: rgba(255, 255, 255, 0.1);
     border-radius: 50%;
     display: flex;
-    align-items: center;
     justify-content: center;
-    font-size: 1.4rem;
-    border: 1.5px solid var(--tg-link-color);
+    align-items: center;
+    font-size: 1.2rem;
+    border: 1px solid var(--tg-link-color);
 }
 
 .user-meta {
@@ -73,23 +75,23 @@ body {
 }
 
 .username {
-    font-weight: 700;
-    font-size: 1rem;
+    font-size: 0.95rem;
+    font-weight: bold;
 }
 
 .user-badge {
     font-size: 0.7rem;
-    color: var(--tg-link-color);
-    font-weight: bold;
+    color: #ffd700;
+    font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
 
 .balance-card {
     text-align: center;
-    padding: 12px;
+    padding: 10px 0 4px 0;
     background: rgba(0, 0, 0, 0.15);
-    border-radius: 14px;
+    border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
@@ -97,80 +99,113 @@ body {
     font-size: 0.75rem;
     color: var(--tg-hint-color);
     letter-spacing: 1px;
-    margin-bottom: 4px;
 }
 
 .balance-amount {
-    font-size: 2rem;
+    font-size: 2.2rem;
     font-weight: 900;
-    color: #ffd700;
-    text-shadow: 0 2px 8px rgba(255, 215, 0, 0.3);
+    color: #4caf50;
+    margin: 2px 0;
     display: flex;
-    align-items: center;
     justify-content: center;
+    align-items: baseline;
     gap: 6px;
+    text-shadow: 0 0 10px rgba(76, 175, 80, 0.2);
 }
 
 .coin-ticker {
     font-size: 0.9rem;
     color: var(--tg-text-color);
-    opacity: 0.7;
+    font-weight: 700;
 }
 
 .balance-estimation {
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     color: var(--tg-hint-color);
-    margin-top: 2px;
 }
 
 /* ========================================== */
-/* 3. SCROLLABLE BODY ENGINE                  */
+/* 3. CONTENT CONTAINER & TABS CONFIG         */
 /* ========================================== */
 .content-body {
     flex: 1;
     overflow-y: auto;
-    padding: 20px 16px;
-    padding-bottom: 100px; /* Chừa khoảng trống an toàn cho thanh bottom nav */
+    padding: 16px;
+    padding-bottom: 90px; /* Chừa khoảng không an toàn cho menu dưới đáy */
     -webkit-overflow-scrolling: touch;
 }
 
 .app-tab-content {
-    animation: fadeIn 0.25s ease-out;
+    animation: fadeIn 0.25s ease-in-out;
 }
 
-.app-tab-content.hidden {
+.hidden {
     display: none !important;
 }
 
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.section-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.section-title h2 {
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+.section-subtitle {
+    font-size: 0.8rem;
+    color: var(--tg-hint-color);
+    margin-top: 4px;
+}
+
 /* ========================================== */
-/* 4. MODULE LỰC VẬT LÝ VÒNG QUAY MAY MẮN     */
+/* 4. TAB 1: LUCKY WHEEL UI                   */
 /* ========================================== */
+.ticket-count {
+    font-size: 0.8rem;
+    background: rgba(255, 255, 255, 0.08);
+    padding: 4px 10px;
+    border-radius: 12px;
+}
+
+.ticket-count b {
+    color: var(--tg-link-color);
+}
+
 .wheel-container {
     position: relative;
-    width: 270px;
-    height: 270px;
-    margin: 15px auto 20px auto;
+    width: 260px;
+    height: 260px;
+    margin: 10px auto 16px auto;
 }
 
 .wheel-pointer {
     position: absolute;
-    top: -12px;
+    top: -14px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 5;
-    font-size: 2rem;
+    font-size: 1.8rem;
     color: #ff3b30;
-    text-shadow: 0 2px 5px rgba(0,0,0,0.5);
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
 }
 
 .wheel-element {
     width: 100%;
     height: 100%;
     border-radius: 50%;
-    border: 6px solid #2c3e50;
     position: relative;
     overflow: hidden;
-    box-shadow: 0 8px 25px rgba(0,0,0,0.4);
+    border: 6px solid var(--tg-secondary-bg-color);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
     transition: transform 4s cubic-bezier(0.1, 0.8, 0.1, 1);
 }
 
@@ -181,107 +216,137 @@ body {
     left: 50%;
     top: 50%;
     transform-origin: 0% 0%;
-    /* Sử dụng công thức toán học phân tách hình tròn thành 8 góc nhọn 45 độ */
     transform: rotate(calc(45deg * var(--i))) skewY(45deg);
     background: var(--bg);
-    border: 0.5px solid rgba(0,0,0,0.15);
 }
 
 .segment span {
     position: absolute;
-    left: 24px;
-    bottom: 24px;
-    /* Cân bằng lại góc skew của ô tam giác giúp chữ nằm xoay chuẩn tâm góc 45 độ */
+    left: 22px;
+    bottom: 22px;
     transform: skewY(-45deg) rotate(-22.5deg);
     font-weight: 800;
     color: #ffffff;
     font-size: 0.65rem;
-    letter-spacing: 0.5px;
-    text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
+    text-shadow: 1px 1px 3px rgba(0,0,0,0.8);
     white-space: nowrap;
     text-transform: uppercase;
 }
 
 .spins-counter-badge {
     text-align: center;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     font-weight: 600;
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.06);
     width: fit-content;
-    margin: 0 auto 20px auto;
-    padding: 6px 14px;
+    margin: 0 auto 16px auto;
+    padding: 4px 12px;
     border-radius: 20px;
     border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .spins-counter-badge span {
     color: var(--tg-link-color);
-    font-weight: 800;
+    font-weight: bold;
 }
-
-/* ========================================== */
-/* 5. COMPONENTS GIAO DIỆN (BUTTON & CARD)    */
-/* ========================================== */
-.btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    border: none;
-    font-weight: 700;
-    border-radius: 12px;
-    cursor: pointer;
-    transition: transform 0.1s ease, opacity 0.2s ease;
-    text-transform: uppercase;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-}
-
-.btn:active {
-    transform: scale(0.97);
-}
-
-.btn-primary {
-    background: var(--tg-button-color);
-    color: var(--tg-button-text-color);
-}
-
-.btn-secondary {
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--tg-text-color);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.btn-success {
-    background: #4cd964;
-    color: #fff;
-}
-
-.btn-lg { padding: 16px; font-size: 1.1rem; border-radius: 14px; }
-.btn-md { padding: 12px; font-size: 0.85rem; }
-.btn-block { padding: 14px; font-size: 0.95rem; }
 
 .action-zone {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
 }
 
+.divider {
+    text-align: center;
+    margin: 4px 0;
+    position: relative;
+}
+
+.divider span {
+    font-size: 0.7rem;
+    color: var(--tg-hint-color);
+    background: var(--tg-bg-color);
+    padding: 0 8px;
+    position: relative;
+    z-index: 2;
+}
+
+.divider::after {
+    content: "";
+    position: absolute;
+    width: 100%;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    left: 0;
+    top: 50%;
+    z-index: 1;
+}
+
+/* SYSTEM BUTTONS DESIGN */
+.btn {
+    width: 100%;
+    padding: 14px;
+    font-size: 0.95rem;
+    font-weight: bold;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.2s ease, transform 0.1s ease;
+    text-transform: uppercase;
+}
+
+.btn:active {
+    transform: scale(0.97); /* Hiệu ứng lún nút điện thoại cực mượt */
+}
+
+.btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none !important;
+}
+
+.btn-primary {
+    background: var(--primary-gradient);
+    color: var(--tg-button-text-color);
+}
+
+.btn-secondary {
+    background-color: #0098ea;
+    color: white;
+}
+
+.btn-success {
+    background-color: #4caf50;
+    color: white;
+}
+
+.btn-lg { padding: 15px; font-size: 1.05rem; }
+.btn-md { padding: 12px; font-size: 0.85rem; }
+.btn-block { padding: 14px; }
+
 .cooldown-wrapper {
-    margin-top: 14px;
+    margin-top: 12px;
     text-align: center;
 }
 
 .timer-text {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     color: #ff9500;
     font-weight: 600;
     background: rgba(255, 149, 0, 0.1);
     display: inline-block;
-    padding: 4px 12px;
+    padding: 4px 10px;
     border-radius: 6px;
     margin: 2px;
 }
 
+/* ========================================== */
+/* 5. TAB 2 & TAB 3 CARD ELEMENTS             */
+/* ========================================== */
 .card {
     background: var(--tg-secondary-bg-color);
     padding: 14px;
@@ -296,10 +361,7 @@ body {
 .card-info h3 { color: var(--tg-link-color); }
 .card-warning h3 { color: #ffcc00; }
 
-/* ========================================== */
-/* 6. FORMS & TABLES (RÚT TIỀN / MỜI BẠN)    */
-/* ========================================== */
-.invite-link-box {
+.invite-link-box, .form-group {
     margin-bottom: 14px;
 }
 
@@ -308,32 +370,29 @@ body {
     font-size: 0.8rem;
     color: var(--tg-hint-color);
     margin-bottom: 6px;
+    font-weight: 500;
 }
 
 .copy-input-group input, .form-control {
     width: 100%;
-    padding: 12px 14px;
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 12px;
+    background: rgba(0, 0, 0, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 10px;
     color: var(--tg-text-color);
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     outline: none;
 }
 
-.copy-input-group input:shadow, .form-control:focus {
+.form-control:focus {
     border-color: var(--tg-link-color);
-}
-
-.form-group {
-    margin-bottom: 14px;
 }
 
 select.form-control {
     appearance: none;
     background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23708499' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
     background-repeat: no-repeat;
-    background-position: right 10px center;
+    background-position: right 12px center;
     background-size: 16px;
     padding-right: 40px;
 }
@@ -341,14 +400,14 @@ select.form-control {
 .rates-table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 10px;
+    margin-top: 8px;
     font-size: 0.75rem;
 }
 
 .rates-table th {
     text-align: left;
     color: var(--tg-hint-color);
-    padding-bottom: 6px;
+    padding-bottom: 4px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -361,7 +420,7 @@ select.form-control {
     padding: 2px 6px;
     border-radius: 4px;
     font-weight: bold;
-    font-size: 0.7rem;
+    font-size: 0.65rem;
 }
 
 .badge.bank { background: rgba(76, 217, 100, 0.15); color: #4cd964; }
@@ -376,7 +435,7 @@ select.form-control {
     bottom: 84px;
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.85);
+    background: rgba(0, 0, 0, 0.88);
     color: white;
     padding: 12px 24px;
     border-radius: 24px;
@@ -399,8 +458,8 @@ select.form-control {
     height: 64px;
     display: flex;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
-    padding-bottom: env(safe-area-inset-bottom); /* Fix an toàn cho màn hình iOS tai thỏ */
-    box-shadow: 0 -2px 10px rgba(0,0,0,0.15);
+    padding-bottom: env(safe-area-inset-bottom); /* Hỗ trợ tai thỏ iOS */
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
     position: absolute;
     bottom: 0;
     left: 0;
@@ -410,12 +469,12 @@ select.form-control {
 
 .nav-item {
     flex: 1;
+    background: transparent;
+    border: none;
     display: flex;
     flex-direction: column;
-    align-items: center;
     justify-content: center;
-    background: none;
-    border: none;
+    align-items: center;
     color: var(--tg-hint-color);
     cursor: pointer;
     gap: 4px;
@@ -424,27 +483,17 @@ select.form-control {
 
 .nav-icon { font-size: 1.2rem; }
 .nav-label { font-size: 0.7rem; font-weight: 600; }
+.nav-item.active { color: var(--tg-link-color); }
 
-.nav-item.active {
-    color: var(--tg-link-color);
-}
-
-/* ========================================== */
-/* 9. HIỆU ỨNG ĐỘNG (ANIMATION ENGINE)        */
-/* ========================================== */
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(4px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes pulse {
-    0% { transform: scale(1); box-shadow: 0 4px 10px rgba(47, 110, 165, 0.3); }
-    50% { transform: scale(1.02); box-shadow: 0 4px 20px rgba(47, 110, 165, 0.6); }
-    100% { transform: scale(1); box-shadow: 0 4px 10px rgba(47, 110, 165, 0.3); }
+/* ANIMATIONS SYSTEM */
+@keyframes pulseGlow {
+    0% { transform: scale(1); box-shadow: 0 4px 10px rgba(47, 110, 165, 0.2); }
+    50% { transform: scale(1.015); box-shadow: 0 4px 16px rgba(47, 110, 165, 0.5); }
+    100% { transform: scale(1); box-shadow: 0 4px 10px rgba(47, 110, 165, 0.2); }
 }
 
 .pulse {
-    animation: pulse 2s infinite ease-in-out;
+    animation: pulseGlow 2.5s infinite ease-in-out;
 }
 
 .pulse:active {
