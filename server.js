@@ -2,6 +2,7 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Monolith Server Engine (Bot Control, RAM Storage, API Hosting & Anti-Sleep)
  * Năm vận hành: 2026
+ * Phiên bản: 2.1.0 (Tối ưu đồng bộ & Quản lý đơn rút tiền)
  */
 
 const { Telegraf, Markup } = require('telegraf');
@@ -10,6 +11,7 @@ const cors = require('cors');
 const crypto = require('crypto');
 const XLSX = require('xlsx');
 const path = require('path');
+const fs = require('fs');
 
 // ==========================================
 // 1. BẢO MẬT: NẠP BIẾN MÔI TRƯỜNG (ENV)
@@ -31,377 +33,379 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Cấu hình các tham số giới hạn đồng bộ hằng ngày
+// Cấu hình tham số hệ thống
 const SERVER_CONFIG = {
+    COIN_TO_VND_RATE: 1000,
     MAX_DAILY_SPINS: 10,
     MAX_DAILY_ADS: 5,
-    SPIN_COOLDOWN_MS: 30 * 1000,
-    ADS_COOLDOWN_MS: 60 * 1000,
-    MIN_VND_COINS_LIMIT: 2000000 // Tối thiểu 2.000 VNĐ = 2.000.000 Xu
+    SPIN_COOLDOWN: 30 * 1000, // 30 giây (ms)
+    ADS_COOLDOWN: 60 * 1000,  // 60 giây (ms)
+    MIN_WITHDRAW_COINS: 2000000 // Tối thiểu 2M xu để rút MoMo/Bank
 };
 
-// Mảng phần thưởng khớp chính xác 100% với giao diện bánh xe
-const WHEEL_REWARDS = [
-    { text: "1,000 XU",  value: 1000 },
-    { text: "5,000 XU",  value: 5000 },
-    { text: "MẤT LƯỢT",  value: 0 },
-    { text: "10,000 XU", value: 10000 },
-    { text: "500 XU",    value: 500 },
-    { text: "20,000 XU", value: 20000 },
-    { text: "MẤT LƯỢT",  value: 0 },
-    { text: "50,000 XU", value: 50000 }
-];
+const BACKUP_INTERVAL = 10 * 60 * 1000; // Tự động sao lưu mỗi 10 phút
+const EXCEL_BACKUP_PATH = path.join(__dirname, 'user_database_backup.xlsx');
 
 // ==========================================
-// 2. ROUTE /HEALTH & CƠ CHẾ TỰ ĐỘNG PING CHỐNG NGỦ
+// 2. RAM CORE STORAGE (Cơ sở dữ liệu lưu tại RAM)
 // ==========================================
-app.get('/health', (req, res) => {
-    res.status(200).json({
-        status: "OK",
-        uptime: process.uptime(),
-        ram_usage: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)} MB`,
-        timestamp: new Date().toISOString()
-    });
-});
+const userDatabase = new Map();
 
-function startSelfPingMechanism() {
-    setInterval(async () => {
-        try {
-            const healthUrl = `${MY_APP_LINK}/health`;
-            const response = await fetch(healthUrl);
-            if (response.ok) {
-                console.log(`[Keep-Alive] Ping thành công tới /health lúc: ${new Date().toLocaleTimeString()}`);
-            }
-        } catch (e) {
-            console.error('[Keep-Alive] Lỗi tự gọi Ping:', e.message);
-        }
-    }, 10 * 60 * 1000); // 10 phút ping một lần
+// Trạng thái mồi mặc định khi có người dùng mới gia nhập
+function createNewUser(uid, username, firstName) {
+    return {
+        id: uid,
+        username: username || '',
+        first_name: firstName || 'Người chơi',
+        coins: 50000, // Tặng sẵn 50,000 Xu trải nghiệm
+        spinsLeft: 3,  // Tặng sẵn 3 lượt quay ban đầu
+        lastSpinTimestamp: 0,
+        lastAdsTimestamp: 0,
+        dailySpinsCount: 0,
+        dailyAdsCount: 0,
+        referredBy: null,
+        totalInvited: 0,
+        lastActiveDate: new Date().toISOString().split('T')[0],
+        updatedAt: new Date().toISOString()
+    };
 }
 
-// ==========================================
-// 3. IN-MEMORY DATABASE (QUẢN LÝ TRÊN RAM)
-// ==========================================
-let userDatabase = new Map();
-const BACKUP_INTERVAL = 5 * 60 * 1000;
+// Kiểm tra và đặt lại giới hạn ngày mới (Daily Reset)
+function checkAndResetDailyLimits(user) {
+    const today = new Date().toISOString().split('T')[0];
+    if (user.lastActiveDate !== today) {
+        user.dailySpinsCount = 0;
+        user.dailyAdsCount = 0;
+        user.lastActiveDate = today;
+        user.updatedAt = new Date().toISOString();
+    }
+}
 
-function verifyTelegramWebAppData(initDataString) {
+// Khôi phục dữ liệu từ bản sao lưu Excel cũ nếu có sẵn lúc khởi động
+(function loadInitialDataFromExcel() {
     try {
-        const urlParams = new URLSearchParams(initDataString);
-        const hash = urlParams.get('hash');
-        urlParams.delete('hash');
-        const sortedParams = Array.from(urlParams.entries()).map(([key, value]) => `${key}=${value}`).sort().join('\n');
-        const secretKey = crypto.createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
-        const calculatedHash = crypto.createHmac('sha256', secretKey).update(sortedParams).digest('hex');
-        if (calculatedHash === hash) {
-            return JSON.parse(urlParams.get('user'));
+        if (fs.existsSync(EXCEL_BACKUP_PATH)) {
+            const workbook = XLSX.readFile(EXCEL_BACKUP_PATH);
+            const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+            let count = 0;
+            rows.forEach(r => {
+                const uid = parseInt(r['ID Telegram'] || r['id'], 10);
+                if (uid) {
+                    userDatabase.set(uid, {
+                        id: uid,
+                        username: r['Username'] || r['username'] || '',
+                        first_name: r['Tên'] || r['first_name'] || 'Người chơi',
+                        coins: parseInt(r['Số Dư Xu'] || r['coins'], 10) || 0,
+                        spinsLeft: parseInt(r['Lượt Quay'] || r['spinsLeft'], 10) || 0,
+                        lastSpinTimestamp: parseInt(r['lastSpinTimestamp'], 10) || 0,
+                        lastAdsTimestamp: parseInt(r['lastAdsTimestamp'], 10) || 0,
+                        dailySpinsCount: parseInt(r['dailySpinsCount'], 10) || 0,
+                        dailyAdsCount: parseInt(r['dailyAdsCount'], 10) || 0,
+                        referredBy: r['referredBy'] || null,
+                        totalInvited: parseInt(r['totalInvited'], 10) || 0,
+                        lastActiveDate: r['lastActiveDate'] || new Date().toISOString().split('T')[0],
+                        updatedAt: r['updatedAt'] || new Date().toISOString()
+                    });
+                    count++;
+                }
+            });
+            console.log(`[RAM Storage] 💾 Khôi phục thành công ${count} người dùng từ file Excel lưu cục bộ.`);
         }
-        return null;
-    } catch (e) {
-        return null;
+    } catch (err) {
+        console.error('[RAM Storage] ❌ Thất bại khi quét file cấu trúc nạp bộ nhớ:', err);
     }
-}
-
-function syncUserInMemory(userId, userData) {
-    const todayStr = new Date().toISOString().split('T')[0];
-    
-    if (!userDatabase.has(userId)) {
-        userDatabase.set(userId, {
-            id: userId,
-            username: userData.username || '',
-            first_name: userData.first_name || 'Người chơi',
-            coins: 50000, // Tặng sẵn 50,000 Xu tài khoản trải nghiệm ban đầu giống app.js
-            spinsLeft: 3,  // 3 Lượt quay khởi tạo đầu game
-            lastSpinTimestamp: 0,
-            lastAdsTimestamp: 0,
-            dailySpinsCount: 0,
-            dailyAdsCount: 0,
-            lastActiveDate: todayStr,
-            botAppLink: `https://t.me/${bot.botInfo?.username || 'SieuCapCayXu_NDTTrung_Bot'}/app`
-        });
-    } else {
-        const existing = userDatabase.get(userId);
-        existing.username = userData.username || existing.username;
-        existing.first_name = userData.first_name || existing.first_name;
-        existing.botAppLink = `https://t.me/${bot.botInfo?.username || 'SieuCapCayXu_NDTTrung_Bot'}/app`;
-        
-        // Cơ chế Auto-Reset hạn mức cày cuốc theo ngày dựa trên Server Time
-        if (existing.lastActiveDate !== todayStr) {
-            existing.dailySpinsCount = 0;
-            existing.dailyAdsCount = 0;
-            existing.spinsLeft = Math.max(existing.spinsLeft, 3); // Hoàn trả tối thiểu 3 lượt quay
-            existing.lastActiveDate = todayStr;
-        }
-    }
-    return userDatabase.get(userId);
-}
+})();
 
 // ==========================================
-// 4. ĐỊNH TUYẾN WEB API (KẾT NỐI FRONTEND)
+// 3. TELEGRAM BOT CORE CONTROL
 // ==========================================
 
-// Đồng bộ cổng API kéo dữ liệu chân thực từ chuỗi mã hóa initData bảo mật phía app.js gửi sang
-app.post('/api/user-data', (req, res) => {
-    const { initData } = req.body;
-    const tgUser = verifyTelegramWebAppData(initData);
-    
-    if (!tgUser) {
-        return res.status(403).json({ error: "Xác thực lớp bảo mật Telegram thất bại!" });
-    }
-
-    const user = syncUserInMemory(tgUser.id, tgUser);
-    res.json(user);
-});
-
-// Giữ cổng dự phòng profile hỗ trợ quá trình test mượt mà
-app.post('/api/user/profile', (req, res) => {
-    const { telegramId, username, firstName } = req.body;
-    if (!telegramId) return res.status(400).json({ error: "Thiếu thông tin định danh!" });
-    
-    const user = syncUserInMemory(parseInt(telegramId, 10), { username, first_name: firstName });
-    res.json(user);
-});
-
-// Tiếp nhận xử lý tính toán vòng quay an toàn tập trung từ xa
-app.post('/api/user/spin', (req, res) => {
-    const { telegramId } = req.body;
-    const uid = parseInt(telegramId, 10);
-    const user = userDatabase.get(uid);
-
-    if (!user) return res.status(404).json({ error: "Không tìm thấy thông tin tài khoản trên RAM!" });
-
-    if (user.spinsLeft <= 0) return res.status(400).json({ error: "Bạn đã hết lượt quay khả dụng!" });
-    if (user.dailySpinsCount >= SERVER_CONFIG.MAX_DAILY_SPINS) return res.status(400).json({ error: "Đã đạt giới hạn số lần quay hôm nay!" });
-    
-    const now = Date.now();
-    if (now - user.lastSpinTimestamp < SERVER_CONFIG.SPIN_COOLDOWN_MS) {
-        return res.status(400).json({ error: "Thao tác quá nhanh, vòng quay đang trong thời gian hồi chiêu!" });
-    }
-
-    // Thực hiện thuật toán bốc ngẫu nhiên ô trúng thưởng và trừ lượt ngầm trên RAM
-    const rewardIndex = Math.floor(Math.random() * 8);
-    const prize = WHEEL_REWARDS[rewardIndex];
-
-    user.spinsLeft -= 1;
-    user.dailySpinsCount += 1;
-    user.lastSpinTimestamp = now;
-    user.coins += prize.value;
-
-    res.json({
-        rewardIndex: rewardIndex,
-        user: user
-    });
-});
-
-// Tuyến đường sạc Xu quảng cáo AdsGram hoặc cập nhật tạo đơn rút tiền
-app.post('/api/update-assets', async (req, res) => {
-    const { initData, action, withdrawMethod, withdrawAddress, withdrawAmount } = req.body;
-    const tgUser = verifyTelegramWebAppData(initData);
-    if (!tgUser) return res.status(403).json({ error: "Xác thực bảo mật Telegram thất bại!" });
-
-    const user = userDatabase.get(tgUser.id);
-    if (!user) return res.status(404).json({ error: "Tài khoản không tồn tại trên hệ thống RAM!" });
-
-    const now = Date.now();
-
-    switch (action) {
-        case 'spin_start': // Hỗ trợ trừ lượt đồng bộ từ xa nếu frontend có gọi lệnh khóa
-            if (user.spinsLeft <= 0) return res.status(400).json({ error: "Hết lượt quay!" });
-            user.spinsLeft -= 1;
-            user.dailySpinsCount += 1;
-            user.lastSpinTimestamp = now;
-            break;
-
-        case 'watch_ads_success':
-            if (user.dailyAdsCount >= SERVER_CONFIG.MAX_DAILY_ADS) {
-                return res.status(400).json({ error: "Đã hết hạn mức xem Ads hôm nay!" });
-            }
-            if (now - user.lastAdsTimestamp < SERVER_CONFIG.ADS_COOLDOWN_MS) {
-                return res.status(400).json({ error: "Quảng cáo đang trong thời gian hồi!" });
-            }
-            user.coins += 12000;
-            user.spinsLeft += 1;
-            user.dailyAdsCount += 1;
-            user.lastAdsTimestamp = now;
-            break;
-
-        case 'withdraw_request':
-            const amount = parseInt(withdrawAmount, 10);
-            if (isNaN(amount) || amount <= 0) return res.status(400).json({ error: "Số xu rút không hợp lệ!" });
-            if (amount > user.coins) return res.status(400).json({ error: "Số dư khả dụng tài khoản không đủ!" });
-
-            // Phân luồng kiểm soát hạn mức tối thiểu từ phía Backend bảo mật
-            if ((withdrawMethod === 'momo' || withdrawMethod === 'bank') && amount < SERVER_CONFIG.MIN_VND_COINS_LIMIT) {
-                return res.status(400).json({ error: "Lệnh bị hủy do dưới hạn mức tối thiểu 2,000,000 Xu!" });
-            }
-
-            // Khấu trừ trực tiếp tài sản trên RAM
-            user.coins -= amount;
-
-            // Bắn tin nhắn báo cáo trực tiếp đến cổng Chat điều hành của Admin
-            const reportMsg = `💰 *YÊU CẦU RÚT TIỀN MỚI* 💰\n\n` +
-                              `👤 Khách hàng: [${user.first_name}](tg://user?id=${user.id})\n` +
-                              `🆔 ID Tài khoản: \`${user.id}\`\n` +
-                              `💳 Phương thức: *${withdrawMethod.toUpperCase()}*\n` +
-                              `📍 Địa chỉ nhận / STK: \`${withdrawAddress}\`\n` +
-                              `📉 Số xu cấu trúc trừ: -*${amount.toLocaleString()} Xu*\n` +
-                              `⏱️ Thời gian: ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}` +
-                              `\n\n*(Lưu ý: Đối với TON Network, Admin thực hiện xét duyệt ngầm và quy đổi dựa theo tỷ giá thực tế)*`;
-
-            try {
-                await bot.telegram.sendMessage(ADMIN_ID, reportMsg, { parse_mode: 'Markdown' });
-            } catch (err) {
-                console.error("Lỗi gửi tin nhắn báo cáo rút tiền tới Admin:", err.message);
-            }
-            break;
-
-        default:
-            return res.status(400).json({ error: "Hành động cấu hình không hợp lệ!" });
-    }
-
-    res.json(user);
-});
-
-// Hỗ trợ tuyến đường phụ đồng bộ cập nhật tài sản thô (Dành cho bản build test local cũ)
-app.post('/api/user/update', async (req, res) => {
-    const { telegramId, action, withdrawMethod, withdrawAddress, withdrawAmount } = req.body;
-    const uid = parseInt(telegramId, 10);
-    const user = userDatabase.get(uid);
-    if (!user) return res.status(404).json({ error: "User không tồn tại!" });
-
-    const now = Date.now();
-    if (action === 'watch_ads') {
-        user.coins += 12000; user.spinsLeft += 1; user.dailyAdsCount += 1; user.lastAdsTimestamp = now;
-    } else if (action === 'withdraw_request') {
-        const amount = parseInt(withdrawAmount, 10);
-        if (!isNaN(amount) && amount <= user.coins) user.coins -= amount;
-    }
-    res.json(user);
-});
-
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// ==========================================
-// 5. AUTO BACKUP CLOUD MECHANISM
-// ==========================================
-async function triggerAutoBackup() {
-    if (userDatabase.size === 0) return;
-    try {
-        const userList = Array.from(userDatabase.values());
-        const backupRawString = JSON.stringify(userList);
-        await bot.telegram.sendMessage(ADMIN_ID, `📦 [AUTO_BACKUP_DATA]\n\`\`\`json\n${backupRawString}\n\`\`\``, { parse_mode: 'MarkdownV2' });
-        console.log(`[Backup] Tự động sao lưu an toàn ${userList.length} tài khoản thành công.`);
-    } catch (e) {
-        console.error("Lỗi sao lưu tự động:", e.message);
-    }
-}
-
-// ==========================================
-// 6. CHỨC NĂNG ĐIỀU HÀNH BOT TELEGRAM
-// ==========================================
-function isAdminMiddleware(ctx, next) {
-    if (ctx.from?.id === ADMIN_ID) return next();
-    return ctx.reply('❌ Lệnh này chỉ dành riêng cho Ban Quản Trị.');
-}
-
+// Cơ chế lọc mã giới thiệu qua câu lệnh khởi động /start ref_xxxx
 bot.start((ctx) => {
-    const user = syncUserInMemory(ctx.from.id, ctx.from);
-    const welcomeText = `👋 *Xin chào ${ctx.from.first_name}!* \n\n` +
-                        `Chào mừng bạn đến với hệ thống *Siêu Cấp Kiếm Xu*.\n` +
-                        `💰 Số dư trải nghiệm: *${user.coins.toLocaleString()} Xu*\n` +
-                        `🎡 Lượt quay sẵn có: *${user.spinsLeft} lượt*\n\n` +
-                        `Hệ thống dữ liệu đã được cấu hình đồng bộ hóa thời gian thực chống hack an toàn 100%. Bấm nút dưới đây để vào ứng dụng cày xu ngay! 👇`;
+    const uid = ctx.from.id;
+    const username = ctx.from.username ? ctx.from.username.replace('@', '') : '';
+    const firstName = ctx.from.first_name || 'Người chơi';
+    const startPayload = ctx.payload; // Lấy chuỗi mã sau lệnh /start
 
-    return ctx.replyWithMarkdown(welcomeText, Markup.inlineKeyboard([
-        [Markup.button.webApp('🚀 Mở Ứng Dụng Kiếm Xu', MY_APP_LINK)]
+    let isNewUser = false;
+    let user = userDatabase.get(uid);
+
+    if (!user) {
+        user = createNewUser(uid, username, firstName);
+        isNewUser = true;
+
+        // Xử lý logic Ref (Mời bạn bè kiếm xu)
+        if (startPayload && startPayload.startsWith('ref_')) {
+            const referrerId = parseInt(startPayload.split('_')[1], 10);
+            if (referrerId && referrerId !== uid && userDatabase.has(referrerId)) {
+                user.referredBy = referrerId;
+                
+                // Thưởng hoa hồng cho người mời
+                const referrer = userDatabase.get(referrerId);
+                referrer.coins += 250000; // Tặng 250K Xu cho người mời thành công
+                referrer.totalInvited = (referrer.totalInvited || 0) + 1;
+                referrer.updatedAt = new Date().toISOString();
+                
+                // Gửi thông báo ẩn cho người mời nếu bot hoạt động tốt
+                bot.telegram.sendMessage(referrerId, `🎉 Bạn đã mời thành công ${firstName}! Nhận ngay +250,000 Xu hoa hồng.`).catch(() => {});
+            }
+        }
+        userDatabase.set(uid, user);
+    } else {
+        // Cập nhật thông tin mới nhất từ Telegram chat phòng hờ đổi tên/username
+        user.username = username;
+        user.first_name = firstName;
+        user.updatedAt = new Date().toISOString();
+    }
+
+    checkAndResetDailyLimits(user);
+
+    const welcomeMsg = `👋 *Chào mừng ${firstName} đến với Siêu Cấp Kiếm Xu\\!*\n\n` +
+                       `💰 *Số dư hiện tại:* ${user.coins.toLocaleString()} Xu\n` +
+                       `🎡 *Lượt quay khả dụng:* ${user.spinsLeft} lượt\n\n` +
+                       `Bấm vào nút dưới đây để mở ứng dụng Web App và bắt đầu kiếm tiền ngay thôi\\!`;
+
+    return ctx.replyWithMarkdownV2(welcomeMsg, Markup.inlineKeyboard([
+        [Markup.button.webApp('🚀 Mở Ứng Dụng Kiếm Xu', `${MY_APP_LINK}?uid=${uid}`)]
     ]));
 });
 
-bot.command('saoluu', isAdminMiddleware, async (ctx) => {
-    const userList = Array.from(userDatabase.values());
-    if (userList.length === 0) return ctx.reply('⚠️ Hệ thống RAM trống.');
-
-    const rows = userList.map(u => ({
-        'ID Telegram': u.id, 
-        'Username': u.username ? `@${u.username}` : 'Không có', 
-        'Tên': u.first_name, 
-        'Số Dư Xu': u.coins, 
-        'Lượt Quay Còn Lại': u.spinsLeft
-    }));
-
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Users');
-    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-
-    await ctx.replyWithDocument(
-        { source: buffer, filename: 'DanhSachHoiVien.xlsx' },
-        { caption: `📊 Đã xuất danh sách thành công! Tổng số: *${userList.length}* tài khoản trên RAM.` }
-    );
+// Lệnh ADMIN cứu hộ khẩn cấp: Xuất file dữ liệu RAM trực tiếp qua Chat Telegram
+bot.command('backup', (ctx) => {
+    if (ctx.from.id !== ADMIN_ID) return ctx.reply('❌ Lệnh này chỉ dành riêng cho Quản trị viên cấp cao nhất.');
+    
+    triggerAutoBackup();
+    if (fs.existsSync(EXCEL_BACKUP_PATH)) {
+        return ctx.replyWithDocument({ source: EXCEL_BACKUP_PATH, filename: `Database_Manual_Backup.xlsx` });
+    } else {
+        return ctx.reply('❌ Không tìm thấy bản ghi dữ liệu nào.');
+    }
 });
 
-bot.command('broadcast', isAdminMiddleware, async (ctx) => {
-    const msgText = ctx.payload;
-    if (!msgText) return ctx.reply('⚠️ Cú pháp đúng: `/broadcast [Nội dung tin nhắn]`');
+// ==========================================
+// 4. RESTFUL API ENDPOINTS (Dành cho Web App FrontEnd)
+// ==========================================
 
-    const userIds = Array.from(userDatabase.keys());
-    ctx.reply(`📣 Đang tiến hành gửi thông báo tới ${userIds.length} người dùng...`);
+// 4.1 API Đồng bộ dữ liệu tài khoản an toàn khi mở Web App
+app.post('/api/sync-user', (expressCtx, response) => {
+    const { uid } = expressCtx.body;
+    const userId = parseInt(uid, 10);
 
-    let thanhCong = 0;
-    for (const id of userIds) {
-        try {
-            await ctx.telegram.sendMessage(id, `📢 *THÔNG BÁO TỪ HỆ THỐNG*\n\n${msgText}`, { parse_mode: 'Markdown' });
-            thanhCong++;
-            await new Promise(resolve => setTimeout(resolve, 50));
-        } catch (e) {}
+    if (!userId || isNaN(userId)) {
+        return response.status(400).json({ success: false, error: "Thiếu thông tin nhận diện tài khoản (UID)." });
     }
-    ctx.reply(`✅ Đã gửi tin nhắn hoàn tất! Thành công: ${thanhCong}/${userIds.length}`);
+
+    let user = userDatabase.get(userId);
+    if (!user) {
+        // Hỗ trợ trường hợp mở trực tiếp ứng dụng không qua Bot click Start
+        user = createNewUser(userId, "Ẩn Danh", "Người chơi WebApp");
+        userDatabase.set(userId, user);
+    }
+
+    checkAndResetDailyLimits(user);
+    return response.json({ success: true, user });
 });
 
-bot.on('message', isAdminMiddleware, async (ctx) => {
-    if (ctx.message.text && ctx.message.text.includes('[AUTO_BACKUP_DATA]')) {
-        try {
-            const rawJson = ctx.message.text.split('```json')[1].split('```')[0].trim();
-            const userList = JSON.parse(rawJson);
-            userList.forEach(u => userDatabase.set(u.id, u));
-            return ctx.reply(`🎉 KHÔI PHỤC THẦN TỐC THÀNH CÔNG! Đã nạp lại *${userList.length}* tài khoản vào RAM.`);
-        } catch { return ctx.reply('Chuỗi sao lưu lỗi cấu trúc!'); }
+// 4.2 API Hành động: Vòng quay may mắn
+app.post('/api/spin-wheel', (req, res) => {
+    const { uid } = req.body;
+    const userId = parseInt(uid, 10);
+    const user = userDatabase.get(userId);
+
+    if (!user) return res.status(404).json({ success: false, error: "Tài khoản không tồn tại." });
+    checkAndResetDailyLimits(user);
+
+    const now = Date.now();
+    if (now - user.lastSpinTimestamp < SERVER_CONFIG.SPIN_COOLDOWN) {
+        return res.json({ success: false, cooldown: true, error: "Thao tác quá nhanh! Vui lòng chờ đếm ngược kết thúc." });
     }
-    if (ctx.message.document && ctx.message.document.file_name.endsWith('.xlsx')) {
+
+    if (user.spinsLeft <= 0 || user.dailySpinsCount >= SERVER_CONFIG.MAX_DAILY_SPINS) {
+        return res.json({ success: false, error: "Bạn đã hết lượt quay khả dụng hoặc đạt giới hạn tối đa hôm nay!" });
+    }
+
+    // Thực hiện vòng quay - Tỷ lệ phần thưởng ngẫu nhiên
+    const prizes = [10000, 20000, 50000, 100000, 200000, 500000];
+    const prizeWon = prizes[Math.floor(Math.random() * prizes.length)];
+
+    user.spinsLeft -= 1;
+    user.dailySpinsCount += 1;
+    user.coins += prizeWon;
+    user.lastSpinTimestamp = now;
+    user.updatedAt = new Date().toISOString();
+
+    return res.json({ success: true, prizeWon, user });
+});
+
+// 4.3 API Hành động: Xem Ads Adsgram nhận Lượt quay & Xu thưởng
+app.post('/api/watch-ads', (req, res) => {
+    const { uid } = req.body;
+    const userId = parseInt(uid, 10);
+    const user = userDatabase.get(userId);
+
+    if (!user) return res.status(404).json({ success: false, error: "Tài khoản không tồn tại." });
+    checkAndResetDailyLimits(user);
+
+    const now = Date.now();
+    if (now - user.lastAdsTimestamp < SERVER_CONFIG.ADS_COOLDOWN) {
+        return res.json({ success: false, cooldown: true, error: "Quảng cáo đang tải, vui lòng đợi thêm chút nữa." });
+    }
+
+    if (user.dailyAdsCount >= SERVER_CONFIG.MAX_DAILY_ADS) {
+        return res.json({ success: false, error: "Hôm nay bạn đã xem hết số lượng video quảng cáo được phân phối!" });
+    }
+
+    // Phần thưởng cố định cho mỗi lượt xem quảng cáo hợp lệ
+    user.coins += 100000;  // Cộng 100K xu
+    user.spinsLeft += 2;   // Tặng thêm 2 lượt quay
+    user.dailyAdsCount += 1;
+    user.lastAdsTimestamp = now;
+    user.updatedAt = new Date().toISOString();
+
+    return res.json({ success: true, rewardCoins: 100000, rewardSpins: 2, user });
+});
+
+// 4.4 API Hành động: Tiếp nhận đơn rút tiền, đẩy thông báo qua Telegram Admin phê duyệt
+app.post('/api/withdraw-request', (req, res) => {
+    const { uid, withdrawMethod, withdrawAddress, withdrawAmount } = req.body;
+    const userId = parseInt(uid, 10);
+    const amount = parseInt(withdrawAmount, 10);
+    const user = userDatabase.get(userId);
+
+    if (!user) return res.status(404).json({ success: false, error: "Người dùng không tồn tại trong hệ thống bộ nhớ RAM." });
+    if (!withdrawAddress || isNaN(amount) || amount <= 0) {
+        return res.json({ success: false, error: "Dữ liệu nhập vào không hợp lệ hoặc bị bỏ trống." });
+    }
+
+    if ((withdrawMethod === 'momo' || withdrawMethod === 'bank') && amount < SERVER_CONFIG.MIN_WITHDRAW_COINS) {
+        return res.json({ success: false, error: `Cảnh báo bảo mật: Cổng MoMo/Ngân Hàng yêu cầu tối thiểu từ ${SERVER_CONFIG.MIN_WITHDRAW_COINS.toLocaleString()} Xu!` });
+    }
+
+    if (amount > user.coins) {
+        return res.json({ success: false, error: "Yêu cầu bị từ chối! Số dư ví hiện tại không đủ khả dụng để lập lệnh." });
+    }
+
+    // Khấu trừ số xu ngay lập tức để tránh tình trạng bug lặp đơn (Double Spending)
+    user.coins -= amount;
+    user.updatedAt = new Date().toISOString();
+
+    const valueInVnd = amount / SERVER_CONFIG.COIN_TO_VND_RATE;
+
+    // Thiết lập chuỗi tin nhắn mẫu gửi thẳng cho Admin Chat duyệt tiền bằng 1 click
+    const notificationToAdmin = `🚨 *YÊU CẦU RÚT TIỀN MỚI CHỜ DUYỆT* 🚨\n\n` +
+                                `👤 *Người chơi:* ${user.first_name} (ID: \`${userId}\`)\n` +
+                                `📧 *Username:* ${user.username ? '@' + user.username : 'Không có'}\n` +
+                                `💳 *Phương thức:* ${withdrawMethod.toUpperCase()}\n` +
+                                `📍 *Địa chỉ nhận:* \`${withdrawAddress}\`\n` +
+                                `💰 *Số xu rút:* ${amount.toLocaleString()} Xu\n` +
+                                `💵 *Giá trị quy đổi:* ${valueInVnd.toLocaleString()} VNĐ\n\n` +
+                                `👉 _Vui lòng xác minh kỹ thông tin tài khoản và chuyển tiền thủ công cho người chơi\\._`;
+
+    // Gửi tin nhắn trực tiếp đến tài khoản Telegram Admin
+    bot.telegram.sendMessage(ADMIN_ID, notificationToAdmin, { parse_mode: 'MarkdownV2' })
+        .then(() => {
+            res.json({ success: true, user });
+        })
+        .catch((err) => {
+            console.error("❌ Thất bại khi đẩy tin nhắn thông báo rút tiền cho Admin:", err);
+            // Hoàn lại tiền cho người chơi nếu lỗi kết nối hệ thống Bot Telegram xảy ra
+            user.coins += amount;
+            res.status(500).json({ success: false, error: "Lỗi đồng bộ máy chủ Telegram. Vui lòng thử lại sau ít phút!" });
+        });
+});
+
+// ==========================================
+// 5. CƠ CHẾ SAO LƯU TỰ ĐỘNG CHỐNG "NGỦ ĐÔNG" VÀ MẤT DỮ LIỆU
+// ==========================================
+
+// Hàm kích hoạt tạo File Excel lưu trực tiếp trên ổ cứng Container Render
+function triggerAutoBackup() {
+    try {
+        if (userDatabase.size === 0) return;
+        const listJson = [];
+        userDatabase.forEach((v) => {
+            listJson.push({
+                'ID Telegram': v.id,
+                'Username': v.username,
+                'Tên': v.first_name,
+                'Số Dư Xu': v.coins,
+                'Lượt Quay': v.spinsLeft,
+                'lastSpinTimestamp': v.lastSpinTimestamp,
+                'lastAdsTimestamp': v.lastAdsTimestamp,
+                'dailySpinsCount': v.dailySpinsCount,
+                'dailyAdsCount': v.dailyAdsCount,
+                'referredBy': v.referredBy,
+                'totalInvited': v.totalInvited,
+                'lastActiveDate': v.lastActiveDate,
+                'updatedAt': v.updatedAt
+            });
+        });
+
+        const worksheet = XLSX.utils.json_to_sheet(listJson);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'UserDatabase');
+        XLSX.writeFile(workbook, EXCEL_BACKUP_PATH);
+        console.log(`[Auto-Backup] 📑 Đã sao lưu đồng bộ an toàn ${userDatabase.size} tài khoản ra file Excel lưu trữ.`);
+    } catch (e) {
+        console.error('[Auto-Backup] ❌ Gặp lỗi nghiêm trọng trong quá trình ghi file Excel:', e);
+    }
+}
+
+// Hàm Self-Ping: Định kỳ 5 phút gọi chính mình để giữ Server OnRender thức tỉnh liên tục
+function startSelfPingMechanism() {
+    if (!MY_APP_LINK) return;
+    setInterval(() => {
+        const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+        fetch(MY_APP_LINK)
+            .then(() => console.log('[Anti-Sleep] 🛸 Tự động gửi lệnh Ping kích hoạt đánh thức Server thành công.'))
+            .catch((e) => console.error('[Anti-Sleep] ❌ Ping lỗi:', e.message));
+    }, 5 * 60 * 1000); 
+}
+
+// Tiếp nhận tập tin khôi phục khẩn cấp từ Chat Admin (Kéo thả file .xlsx trực tiếp vào Bot)
+bot.on('document', async (ctx) => {
+    if (ctx.from.id !== ADMIN_ID) return;
+    const doc = ctx.message.document;
+    if (doc.file_name.endsWith('.xlsx')) {
         try {
-            const fileLink = await ctx.telegram.getFileLink(ctx.message.document.file_id);
-            const res = await fetch(fileLink.href);
+            const link = await ctx.telegram.getFileLink(doc.file_id);
+            const res = await import('node-fetch').then(m => m.default(link.href));
             const buf = await res.arrayBuffer();
             const workbook = XLSX.read(new Uint8Array(buf), { type: 'array' });
             const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
             let count = 0;
             rows.forEach(r => {
-                // Đồng bộ linh hoạt tên cột nạp từ file Excel vào RAM không lo lệch pha
-                const uid = parseInt(r['ID Telegram'] || r['ID Người Dùng'], 10);
+                const uid = parseInt(r['ID Telegram'] || r['id'], 10);
                 if (uid) {
-                    userDatabase.set(uid, { 
-                        id: uid, 
-                        username: r['Username'] ? r['Username'].replace('@','') : '', 
-                        first_name: r['Tên'] || 'Người chơi', 
-                        coins: parseInt(r['Số Dư Xu']) || 0, 
-                        spinsLeft: parseInt(r['Lượt Quay Còn Lại'] || r['Lượt Quay'], 10) || 3, 
-                        lastSpinTimestamp: 0,
-                        lastAdsTimestamp: 0,
-                        dailySpinsCount: 0,
-                        dailyAdsCount: 0,
-                        lastActiveDate: new Date().toISOString().split('T')[0]
+                    userDatabase.set(uid, {
+                        id: uid,
+                        username: r['Username'] || r['username'] || '',
+                        first_name: r['Tên'] || r['first_name'] || 'Người chơi',
+                        coins: parseInt(r['Số Dư Xu'] || r['coins'], 10) || 0,
+                        spinsLeft: parseInt(r['Lượt Quay Còn Lại'] || r['Lượt Quay'] || r['spinsLeft'], 10) || 3,
+                        lastSpinTimestamp: parseInt(r['lastSpinTimestamp'], 10) || 0,
+                        lastAdsTimestamp: parseInt(r['lastAdsTimestamp'], 10) || 0,
+                        dailySpinsCount: parseInt(r['dailySpinsCount'], 10) || 0,
+                        dailyAdsCount: parseInt(r['dailyAdsCount'], 10) || 0,
+                        referredBy: r['referredBy'] || null,
+                        totalInvited: parseInt(r['totalInvited'], 10) || 0,
+                        lastActiveDate: r['lastActiveDate'] || new Date().toISOString().split('T')[0],
+                        updatedAt: r['updatedAt'] || new Date().toISOString()
                     });
                     count++;
                 }
             });
+            // Ghi đè lại bản backup lưu cục bộ ngay khi nạp thành công
+            triggerAutoBackup();
             return ctx.reply(`🎉 Khôi phục từ file Excel thành công *${count}* người dùng vào RAM.`);
-        } catch { return ctx.reply('Lỗi phân tích file Excel.'); }
+        } catch (err) { 
+            return ctx.reply('❌ Thao tác thất bại! File Excel không đúng biểu mẫu cấu trúc dữ liệu.'); 
+        }
     }
 });
 
 // ==========================================
-// 7. KHỞI CHẠY MÁY CHỦ NGUYÊN KHỐI
+// 6. KHỞI CHẠY MÁY CHỦ NGUYÊN KHỐI
 // ==========================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
@@ -410,9 +414,10 @@ app.listen(PORT, () => {
 
 bot.launch().then(() => {
     console.log('🚀 [Bot Telegram] Hệ thống lắng nghe lệnh trực tuyến đã sẵn sàng!');
-    setInterval(triggerAutoBackup, BACKUP_INTERVAL);
-    startSelfPingMechanism();
+    setInterval(triggerAutoBackup, BACKUP_INTERVAL); // Kích hoạt chu kỳ backup tự động
+    startSelfPingMechanism(); // Kích hoạt tự động chống ngủ đông
 });
 
+// Đóng bot an toàn khi server bị kill đột ngột
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
