@@ -1,0 +1,29 @@
+{
+  "name": "sieu-cap-kiem-xu-render",
+  "version": "2.0.0",
+  "description": "Hệ thống Telegram Mini App nguyên khối 100% trên Render 512MB RAM",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "telegram",
+    "mini-app",
+    "bot",
+    "adsgram",
+    "ton",
+    "monolith"
+  ],
+  "author": "NDTTrung",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "crypto": "^1.0.1",
+    "express": "^4.19.2",
+    "telegraf": "^4.16.3",
+    "xlsx": "^0.18.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
