@@ -25,114 +25,106 @@
                     <span id="user-points">50,000</span>
                     <span class="coin-ticker">COINS</span>
                 </div>
-                <p class="balance-estimation">~ <span id="vnd-estimation">50</span> VNĐ</p>
+                <p class="balance-estimation">~ <span id=\"vnd-estimation\">50</span> VNĐ</p>
             </div>
         </header>
 
         <main class="content-body">
             
             <section id="tab-wheel" class="app-tab-content">
-                <div class="section-title">
-                    <h2>🎡 Vòng Quay May Mắn</h2>
-                    <span class="ticket-count">Còn lại: <b id="user-spins">3</b> lượt</span>
-                </div>
-                
-                <div class="wheel-container">
-                    <div class="wheel-pointer">▼</div>
-                    <div id="wheel" class="wheel-element">
-                        <div class="segment" style="--i:1; --bg:#FF5733;"><span>1,000 XU</span></div>
-                        <div class="segment" style="--i:2; --bg:#33FF57;"><span>5,000 XU</span></div>
-                        <div class="segment" style="--i:3; --bg:#3357FF;"><span>MẤT LƯỢT</span></div>
-                        <div class="segment" style="--i:4; --bg:#F3FF33;"><span>10,000 XU</span></div>
-                        <div class="segment" style="--i:5; --bg:#FF33F3;"><span>500 XU</span></div>
-                        <div class="segment" style="--i:6; --bg:#33FFF0;"><span>20,000 XU</span></div>
-                        <div class="segment" style="--i:7; --bg:#FFAF33;"><span>MẤT LƯỢT</span></div>
-                        <div class="segment" style="--i:8; --bg:#AF33FF;"><span>50,000 XU</span></div>
+                <div class="wheel-section">
+                    <div class="wheel-stats">
+                        <div class="stat-box">
+                            <span class="stat-label">Lượt quay còn:</span>
+                            <span id="user-spins" class="stat-value highlight">3</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Hôm nay đã quay:</span>
+                            <span id="daily-spin-count" class="stat-value">0/10</span>
+                        </div>
+                    </div>
+
+                    <div class="wheel-container">
+                        <div class="wheel-pointer">▼</div>
+                        <div id="wheel-wrapper">
+                            <div id="wheel" class="wheel-element">
+                                <div class="wheel-segment" style="--i:1; --clr:#ff4757;"><span>10K Xu</span></div>
+                                <div class="wheel-segment" style="--i:2; --clr:#2ed573;"><span>Mất Lượt</span></div>
+                                <div class="wheel-segment" style="--i:3; --clr:#1e90ff;"><span>50K Xu</span></div>
+                                <div class="wheel-segment" style="--i:4; --clr:#ffa500;"><span>Thêm Lượt</span></div>
+                                <div class="wheel-segment" style="--i:5; --clr:#9b59b6;"><span>5K Xu</span></div>
+                                <div class="wheel-segment" style="--i:6; --clr:#34495e;"><span>Chia Đôi</span></div>
+                                <div class="wheel-segment" style="--i:7; --clr:#e74c3c;"><span>100K Xu</span></div>
+                                <div class="wheel-segment" style="--i:8; --clr:#1abc9c;"><span>X2 Xu</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="wheel-actions">
+                        <button id="btn-spin" class="btn btn-primary btn-lg">🎡 QUAY NGAY</button>
+                        <div id="spin-cooldown" class="cooldown-notice hidden">⚡ Chờ hồi năng lượng: <span>30</span>s</div>
                     </div>
                 </div>
 
-                <div class="spins-counter-badge">
-                    Bạn còn: <span id="user-spins-badge">3</span> lượt quay hôm nay
-                </div>
-
-                <div class="action-zone">
-                    <button id="btn-spin" class="btn btn-primary btn-lg pulse">🎡 QUAY NGAY</button>
-                    <div class="divider"><span>HOẶC NẠP THÊM LƯỢT</span></div>
-                    <button id="btn-watch-ads" class="btn btn-secondary btn-md">📺 XEM ADS LẤY LƯỢT</button>
-                </div>
-
-                <div class="cooldown-wrapper">
-                    <p id="spin-timer" class="timer-text hidden">⏳ Chờ quay tiếp: <span>00:00</span></p>
-                    <p id="ads-timer" class="timer-text hidden">⏳ Chờ Ads tiếp: <span>00:00</span></p>
+                <div class="ads-section">
+                    <div class="ads-header">
+                        <h3>📺 Xem Ads Nhận Lượt Quay</h3>
+                        <span id="daily-ads-count" class="ads-badge">0/5 hôm nay</span>
+                    </div>
+                    <p class="ads-desc">Xem hết 15s quảng cáo từ đối tác Adsgram để nhận ngay +1 lượt quay may mắn vào RAM.</p>
+                    <button id="btn-watch-ad" class="btn btn-secondary">▶ Xem Video Quảng Cáo</button>
+                    <div id="ad-cooldown" class="cooldown-notice hidden">⏳ Thao tác quá nhanh! Chờ: <span>60</span>s</div>
                 </div>
             </section>
 
             <section id="tab-invite" class="app-tab-content hidden">
-                <div class="card card-info">
-                    <h3>👥 Chương Trình Giới Thiệu</h3>
-                    <p>Chia sẻ liên kết của bạn với bạn bè. Nhận ngay <b>+5,000 Xu</b> và <b>+2 Lượt quay</b> cho mỗi thành viên mới tham gia kích hoạt hệ thống!</p>
-                </div>
-
-                <div class="invite-link-box">
-                    <label for="share-url-text">Liên kết giới thiệu độc quyền:</label>
-                    <div class="copy-input-group">
-                        <input type="text" id="share-url-text" readonly value="Đang tải link giới thiệu...">
+                <div class="invite-card">
+                    <div class="invite-icon">🎁</div>
+                    <h2>Mời Bạn Bè - Nhận Xu Khủng</h2>
+                    <p class="invite-bonus">+10,000 COINS cho mỗi người bạn tham gia qua link của bạn!</p>
+                    
+                    <div class="referral-box">
+                        <p class="ref-label">ĐƯỜNG DẪN GIỚI THIỆU CỦA BẠN:</p>
+                        <div class="link-input-group">
+                            <input type="text" id="share-link" readonly value="Đang tạo mã giới thiệu...">
+                            <button id="btn-copy-link" class="btn btn-small">Sao Chép</button>
+                        </div>
                     </div>
-                </div>
 
-                <button id="btn-invite-friend" class="btn btn-success btn-block">🚀 GỬI LINK CHO BẠN BÈ</button>
+                    <button id="btn-share-tg" class="btn btn-primary btn-block">🚀 Gửi Trực Tiếp Vào Tin Nhắn Telegram</button>
+                </div>
             </section>
 
             <section id="tab-withdraw" class="app-tab-content hidden">
-                <div class="card card-warning">
-                    <h3>⚠️ Quy Ước Hạn Mức Đổi Thưởng</h3>
-                    <table class="rates-table">
-                        <thead>
-                            <tr>
-                                <th>Phương thức</th>
-                                <th>Tỷ giá</th>
-                                <th>Rút Tối Thiểu</th>
-                                <th>Xu Yêu Cầu</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><span class="badge bank">🇻🇳 VNĐ / MoMo</span></td>
-                                <td>1đ = 1,000 Xu</td>
-                                <td><b>2,000 VNĐ</b></td>
-                                <td><span class="highlight-coins">2,000,000 Xu</span></td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge ton-crypto">💎 TON Network</span></td>
-                                <td>Tỷ giá thỏa thuận</td>
-                                <td><b>0.0003 TON</b></td>
-                                <td><span class="highlight-coins" style="color: var(--tg-hint-color);">Xét duyệt ngầm</span></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="withdraw-form">
-                    <div class="form-group">
-                        <label for="withdraw-method">Chọn hình thức nhận tiền:</label>
-                        <select id="withdraw-method" class="form-control">
-                            <option value="momo">Ví Điện Tử MoMo</option>
-                            <option value="bank">Ngân Hàng Chuyển Khoản</option>
-                            <option value="ton">Mạng Lưới Ví TON Network</option>
-                        </select>
+                <div class="withdraw-card">
+                    <div class="withdraw-header">
+                        <h2>💳 Tạo Lệnh Rút Tiền Mặt</h2>
+                        <p class="rate-note">Tỷ giá cố định: 1.000 Xu = 1 VNĐ. Duyệt lệnh tự động qua Bot Telegram.</p>
                     </div>
 
-                    <div class="form-group">
-                        <label for="withdraw-address">Số điện thoại / STK / Địa chỉ Ví TON:</label>
-                        <input type="text" id="withdraw-address" class="form-control" placeholder="Nhập chính xác thông tin nhận tiền">
-                    </div>
+                    <div class="form-container">
+                        <div class="form-group">
+                            <label for="withdraw-method">Hình thức nhận tiền:</label>
+                            <select id="withdraw-method" class="form-control">
+                                <option value="momo">Ví Điện Tử MoMo (Min 2.000đ)</option>
+                                <option value="bank">Chuyển Khoản Ngân Hàng (Min 2.000đ)</option>
+                                <option value="ton">Mạng Lưới Ví TON Crypto</option>
+                            </select>
+                        </div>
 
-                    <div class="form-group">
-                        <label for="withdraw-amount">Số Xu muốn rút (MoMo tối thiểu 2,000,000 Xu):</label>
-                        <input type="number" id="withdraw-amount" class="form-control" placeholder="Ví dụ: 2000000">
-                    </div>
+                        <div class="form-group">
+                            <label for="withdraw-address">Thông tin tài khoản nhận:</label>
+                            <input type="text" id="withdraw-address" class="form-control" placeholder="Số điện thoại Momo / Số tài khoản + Tên ngân hàng">
+                        </div>
 
-                    <button id="btn-submit-withdraw" class="btn btn-primary btn-block">💸 TẠO ĐƠN RÚT TIỀN</button>
+                        <div class="form-group">
+                            <label for="withdraw-amount">Số Xu muốn rút (COINS):</label>
+                            <input type="number" inputmode="numeric" id="withdraw-amount" class="form-control" placeholder="Ví dụ: 2000000">
+                            <span class="input-hint">Rút MoMo/Bank tối thiểu là 2,000,000 Xu (tương đương 2,000đ).</span>
+                        </div>
+
+                        <button id="btn-submit-withdraw" class="btn btn-success btn-block">🚀 Gửi Đơn Đẩy Lên Hệ Thống Duyệt</button>
+                    </div>
                 </div>
             </section>
 
@@ -153,19 +145,23 @@
             </button>
         </nav>
 
+        <div id="toast-container" class="toast"></div>
+
     </div>
 
     <script>
         document.querySelectorAll('.nav-item').forEach(button => {
             button.addEventListener('click', () => {
+                // Xóa trạng thái active cũ
                 document.querySelectorAll('.nav-item').forEach(btn => btn.classList.remove('active'));
                 document.querySelectorAll('.app-tab-content').forEach(tab => tab.classList.add('hidden'));
                 
+                // Kích hoạt tab mới
                 button.classList.add('active');
                 const targetTabId = button.getAttribute('data-target');
                 document.getElementById(targetTabId).classList.remove('hidden');
 
-                // Kích hoạt phản hồi rung phần cứng nếu chạy trong Telegram App
+                // Kích hoạt phản hồi rung phần cứng nếu chạy trong Telegram App thật
                 if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
                     window.Telegram.WebApp.HapticFeedback.impactOccurred('light');
                 }
