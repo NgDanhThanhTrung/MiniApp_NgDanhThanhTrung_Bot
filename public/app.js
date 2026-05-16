@@ -8,26 +8,22 @@
 // 1. KHỞI TẠO TELEGRAM SDK VÀ ĐỊNH TUYẾN API
 // ==========================================
 const tg = window.Telegram ? window.Telegram.WebApp : null;
-
-// Khi chạy mô hình nguyên khối, API URL chính là địa chỉ gốc (Origin) của trang web hiện tại
 const BACKEND_API_URL = window.location.origin; 
 
 if (tg) {
     tg.ready();
-    tg.expand(); // Kéo dãn ứng dụng tràn màn hình Mobile Webview
-    if (tg.disableVerticalSwipes) tg.disableVerticalSwipes(); // Chống tình trạng vuốt trượt lỡ đóng app
+    tg.expand(); 
+    if (tg.disableVerticalSwipes) tg.disableVerticalSwipes(); 
 }
 
-// Cấu hình các bộ tham số đếm ngược Cooldown và Hạn mức
 const CONFIG = {
-    COIN_TO_VND_RATE: 1000, // Tỷ lệ quy đổi: 1 VNĐ = 1000 Xu
-    SPIN_COOLDOWN: 30,      // Thời gian chờ giữa 2 lần quay (giây)
-    ADS_COOLDOWN: 60,       // Thời gian chờ giữa 2 lần xem Ads (giây)
+    COIN_TO_VND_RATE: 1000, 
+    SPIN_COOLDOWN: 30,      
+    ADS_COOLDOWN: 60,       
     MAX_DAILY_SPINS: 10,
     MAX_DAILY_ADS: 5,
 };
 
-// Trạng thái tài khoản cục bộ (🌟 Đã mồi sẵn 50,000 Xu và 3 lượt quay đồng bộ với index.html)
 let serverUserState = {
     id: 0,
     coins: 50000,
@@ -39,23 +35,21 @@ let serverUserState = {
     referrerId: null
 };
 
-// Mảng phần thưởng khớp chính xác 100% với góc quay CSS và các ô trên index.html
+// 🌟 CẬP NHẬT: Mảng phần thưởng thuần Xu khớp chuẩn 100% với index.html và server.js
 const WHEEL_REWARDS = [
-    { text: "10K XU",   value: 10000 },
-    { text: "MẤT LƯỢT", value: 0 },
-    { text: "50K XU",   value: 50000 },
-    { text: "THÊM LƯỢT", value: 0 }, // Logic xử lý thêm lượt quay được quản lý riêng
-    { text: "5K XU",    value: 5000 },
-    { text: "CHIA ĐÔI",  value: 0 },
-    { text: "100K XU",  value: 100000 },
-    { text: "X2 XU",     value: 0 }
+    { text: "1,000 XU",  value: 1000 },
+    { text: "5,000 XU",  value: 5000 },
+    { text: "200 XU",    value: 200 },
+    { text: "10,000 XU", value: 10000 },
+    { text: "500 XU",    value: 500 },
+    { text: "2,000 XU",  value: 2000 },
+    { text: "20,000 XU", value: 20000 },
+    { text: "50,000 XU", value: 50000 }
 ];
 
-// 🌟 VÁ LỖI CỐT LÕI: Khai báo biến toàn cục tích lũy góc xoay vật lý để vòng quay hoạt động
 let wheelRotation = 0; 
 let isSpinning = false;
 
-// Hàm kích hoạt phản hồi rung trên thiết bị di động
 function triggerHaptic(type = 'light') {
     if (tg && tg.HapticFeedback) {
         switch (type) {
@@ -68,7 +62,6 @@ function triggerHaptic(type = 'light') {
     }
 }
 
-// Hàm hiển thị thông báo Toast nhanh góc dưới màn hình
 function showToast(message) {
     let toast = document.getElementById('toast-container');
     if (!toast) return;
@@ -86,13 +79,8 @@ function showToast(message) {
 // ==========================================
 // 2. KẾT NỐI ĐỒNG BỘ DỮ LIỆU VỚI BACKEND SERVER
 // ==========================================
-
-// Lấy thông tin tài khoản an toàn từ bộ nhớ RAM của Server
 async function fetchUserAccountData() {
-    if (!tg || !tg.initData) {
-        console.warn("Ứng dụng chưa được kích hoạt trong Telegram Webview.");
-        return;
-    }
+    if (!tg || !tg.initData) return;
     try {
         const response = await fetch(`${BACKEND_API_URL}/api/user-data`, {
             method: 'POST',
@@ -108,7 +96,6 @@ async function fetchUserAccountData() {
     }
 }
 
-// Đẩy dữ liệu cập nhật tài sản lên API Server
 async function postAssetUpdate(actionType, extraParams = {}) {
     if (!tg || !tg.initData) return false;
     try {
@@ -136,13 +123,11 @@ async function postAssetUpdate(actionType, extraParams = {}) {
 // 3. RENDER VÀ ĐỒNG BỘ GIAO DIỆN NGƯỜI DÙNG (UI)
 // ==========================================
 function updateUI() {
-    // Đổ dữ liệu định danh người dùng
-    let usernameDisplay = "Chúa tể Cày Xu";
+    let usernameDisplay = "Thành viên TMA";
     if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
         const u = tg.initDataUnsafe.user;
         usernameDisplay = u.first_name + (u.last_name ? " " + u.last_name : "");
         
-        // Cập nhật Link mời bạn bè độc quyền tại Tab 2 khớp với cấu trúc index.html mới
         if (u.id && document.getElementById('share-link')) {
             document.getElementById('share-link').value = `https://t.me/SieuCapCayXu_NDTTrung_Bot/app?startapp=ref_${u.id}`;
         }
@@ -151,7 +136,6 @@ function updateUI() {
         document.getElementById('username').innerText = usernameDisplay;
     }
 
-    // Cập nhật số dư và số tiền VNĐ ước lượng trực quan công khai
     const coins = serverUserState.coins || 0;
     if (document.getElementById('user-points')) {
         document.getElementById('user-points').innerText = coins.toLocaleString('en-US');
@@ -162,7 +146,6 @@ function updateUI() {
         document.getElementById('vnd-estimation').innerText = vndEstimation.toLocaleString('vi-VN');
     }
 
-    // Cập nhật số lượt quay khả dụng và bộ đếm mốc giới hạn ngày
     if (document.getElementById('user-spins')) {
         document.getElementById('user-spins').innerText = serverUserState.spinsLeft ?? 0;
     }
@@ -180,8 +163,6 @@ function updateUI() {
 function runCooldownTimers() {
     setInterval(() => {
         const now = Date.now();
-
-        // 1. Quản lý trạng thái và bộ đếm chữ nút Vòng quay
         const btnSpin = document.getElementById('btn-spin');
         const spinCooldownEl = document.getElementById('spin-cooldown');
         
@@ -208,7 +189,6 @@ function runCooldownTimers() {
             }
         }
 
-        // 2. Quản lý trạng thái và bộ đếm chữ nút Xem Video Ads
         const btnAds = document.getElementById('btn-watch-ad');
         const adCooldownEl = document.getElementById('ad-cooldown');
         
@@ -262,38 +242,29 @@ async function handleLuckyWheel() {
     document.getElementById('btn-spin').disabled = true;
     triggerHaptic('heavy');
 
-    // Gọi API Server RAM để trừ lượt quay và chốt chặn bảo mật trước khi cho xoay đồ họa
     const lockSuccess = await postAssetUpdate('spin_start');
     if (!lockSuccess) { isSpinning = false; return; }
 
-    // Xử lý góc quay ngẫu nhiên từ vị trí Server đồng bộ
+    // Xử lý logic bốc thưởng đồng bộ ngẫu nhiên
     const targetIndex = Math.floor(Math.random() * 8);
     const degreesPerSegment = 360 / 8;
-    const extraRounds = 5 * 360; // Xoay gia tốc tít mắt 5 vòng tròn lớn
+    const extraRounds = 5 * 360; 
     
-    // Tính toán góc xoay vật lý lũy tiến chuẩn xác hướng tâm khớp với index.html mới
     wheelRotation += extraRounds + (360 - (targetIndex * degreesPerSegment)) - (wheelRotation % 360);
 
-    // Đồng bộ gọi chuẩn ID "wheel" bọc các segment trong index.html
     const wheel = document.getElementById('wheel');
     if (wheel) {
         wheel.style.transform = `rotate(${wheelRotation}deg)`;
     }
 
-    // Đợi hiệu ứng CSS hoàn thành trong 4 giây tĩnh
     setTimeout(async () => {
         isSpinning = false;
         const prize = WHEEL_REWARDS[targetIndex];
         
-        if (prize.value > 0) {
-            // Đẩy đơn cập nhật tài sản thực lĩnh cộng Xu lên bộ nhớ RAM
-            await postAssetUpdate('spin_reward', { rewardCoins: prize.value });
-            triggerHaptic('success');
-            showToast(`🎉 Tuyệt vời! Bạn đã quay trúng +${prize.value.toLocaleString()} Xu!`);
-        } else {
-            triggerHaptic('medium');
-            showToast(`😢 Ôi trúng ô ${prize.text} rồi, chúc bạn may mắn lần sau!`);
-        }
+        // Gửi lệnh cộng số tiền thực lĩnh lên RAM Server
+        await postAssetUpdate('spin_reward', { rewardCoins: prize.value });
+        triggerHaptic('success');
+        showToast(`🎉 Tuyệt vời! Bạn đã quay trúng +${prize.value.toLocaleString()} Xu!`);
     }, 4000);
 }
 
@@ -316,7 +287,6 @@ function handleWatchAds() {
     triggerHaptic('light');
 
     if (window.Adsgram) {
-        // Hãy cấu hình dán đúng Block ID thật của bạn vào chuỗi bên dưới khi được duyệt từ Adsgram
         const AdController = window.Adsgram.createAdController('YOUR_BLOCK_ID');
         showToast("🔄 Đang kết nối luồng AdsGram...");
         
@@ -328,14 +298,9 @@ function handleWatchAds() {
             }
         }).catch((err) => {
             triggerHaptic('error');
-            if (err && err.done === false) {
-                showToast("⚠️ Bạn đã tắt video quá sớm! Không được nhận thưởng.");
-            } else {
-                showToast("❌ Lỗi đường truyền tải Video AdsGram.");
-            }
+            showToast("❌ Lỗi đường truyền tải Video AdsGram hoặc tắt ads sớm.");
         });
     } else {
-        // Khối Sandbox dự phòng giả lập chạy thử trên môi trường duyệt Local Web thông thường
         showToast("📺 Chế độ Sandbox: Xem Ads thành công! (+1 Lượt)");
         setTimeout(async () => {
             await postAssetUpdate('watch_ads_success');
@@ -345,16 +310,12 @@ function handleWatchAds() {
 }
 
 // ==========================================
-// 7. INITIALIZER ENTRY POINT (RÀNG BUỘC SỰ KIỆN)
+// 7. INITIALIZER ENTRY POINT
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. Kéo dữ liệu lưu từ RAM server về đồng bộ giao diện tĩnh mồi sẵn
     fetchUserAccountData();
-    
-    // 2. Kích hoạt luồng chạy ngầm tính toán Cooldown từng giây liên tục
     runCooldownTimers();
 
-    // Ràng buộc các sự kiện điều hành click chức năng chính khớp ID mới
     if (document.getElementById('btn-spin')) {
         document.getElementById('btn-spin').addEventListener('click', handleLuckyWheel);
     }
@@ -362,7 +323,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('btn-watch-ad').addEventListener('click', handleWatchAds);
     }
 
-    // 3. Xử lý sao chép link mời nhanh ở Tab 2
     if (document.getElementById('btn-copy-link')) {
         document.getElementById('btn-copy-link').addEventListener('click', () => {
             triggerHaptic('light');
@@ -376,12 +336,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // 4. Xử lý sự kiện click gửi link chia sẻ mời bạn bè tại Tab 2
     if (document.getElementById('btn-share-tg')) {
         document.getElementById('btn-share-tg').addEventListener('click', () => {
             triggerHaptic('light');
             const shareUrl = document.getElementById('share-link').value;
-            const textInvite = encodeURIComponent("🔥 Vào cày xu đổi tiền mặt và TON với mình cực dễ trên Telegram! Rút tiền uy tín cực kỳ luôn 👇");
+            const textInvite = encodeURIComponent("🔥 Vào cày xu đổi tiền mặt cực dễ trên Telegram! Rút tiền uy tín cực kỳ luôn 👇");
             const telegramShareLink = `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${textInvite}`;
             
             if (tg && tg.openTelegramLink) {
@@ -392,14 +351,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // 5. Xử lý nộp đơn gửi lệnh tạo yêu cầu rút tiền mặt/TON phân luồng logic mới
     if (document.getElementById('btn-submit-withdraw')) {
         document.getElementById('btn-submit-withdraw').addEventListener('click', async () => {
             const method = document.getElementById('withdraw-method').value;
             const address = document.getElementById('withdraw-address').value.trim();
             const amount = parseInt(document.getElementById('withdraw-amount').value, 10);
-
-            // Hạn mức rút tối thiểu theo logic mới: 2,000 VNĐ = 2,000,000 Xu (Áp dụng riêng cho Momo và Bank)
             const MIN_COINS_REQUIRED = 2000000; 
 
             if (!address || isNaN(amount) || amount <= 0) {
@@ -408,7 +364,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // Kiểm tra hạn mức tối thiểu mốc 2 triệu xu cho Momo/Bank
             if ((method === 'momo' || method === 'bank') && amount < MIN_COINS_REQUIRED) {
                 triggerHaptic('error');
                 showToast(`❌ MoMo/Ngân hàng yêu cầu rút tối thiểu từ ${MIN_COINS_REQUIRED.toLocaleString()} Xu!`);
@@ -421,7 +376,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // Đẩy đơn rút tiền lên hàng chờ bộ não Server duyệt bắn cảnh báo tin nhắn Telegram
             const ok = await postAssetUpdate('withdraw_request', { 
                 withdrawMethod: method, 
                 withdrawAddress: address, 
