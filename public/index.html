@@ -25,7 +25,7 @@
                     <span id="user-points">50,000</span>
                     <span class="coin-ticker">COINS</span>
                 </div>
-                <p class="balance-estimation">~ <span id=\"vnd-estimation\">50</span> VNĐ</p>
+                <p class="balance-estimation">~ <span id="vnd-estimation">50</span> VNĐ</p>
             </div>
         </header>
 
@@ -48,14 +48,14 @@
                         <div class="wheel-pointer">▼</div>
                         <div id="wheel-wrapper">
                             <div id="wheel" class="wheel-element">
-                                <div class="wheel-segment" style="--i:1; --clr:#ff4757;"><span>10K Xu</span></div>
-                                <div class="wheel-segment" style="--i:2; --clr:#2ed573;"><span>Mất Lượt</span></div>
-                                <div class="wheel-segment" style="--i:3; --clr:#1e90ff;"><span>50K Xu</span></div>
-                                <div class="wheel-segment" style="--i:4; --clr:#ffa500;"><span>Thêm Lượt</span></div>
-                                <div class="wheel-segment" style="--i:5; --clr:#9b59b6;"><span>5K Xu</span></div>
-                                <div class="wheel-segment" style="--i:6; --clr:#34495e;"><span>Chia Đôi</span></div>
-                                <div class="wheel-segment" style="--i:7; --clr:#e74c3c;"><span>100K Xu</span></div>
-                                <div class="wheel-segment" style="--i:8; --clr:#1abc9c;"><span>X2 Xu</span></div>
+                                <div class="wheel-segment" style="--i:1; --clr:#ff4757;"><span>1,000 XU</span></div>
+                                <div class="wheel-segment" style="--i:2; --clr:#2ed573;"><span>5,000 XU</span></div>
+                                <div class="wheel-segment" style="--i:3; --clr:#1e90ff;"><span>200 XU</span></div>
+                                <div class="wheel-segment" style="--i:4; --clr:#ffa500;"><span>10,000 XU</span></div>
+                                <div class="wheel-segment" style="--i:5; --clr:#9b59b6;"><span>500 XU</span></div>
+                                <div class="wheel-segment" style="--i:6; --clr:#34495e;"><span>2,000 XU</span></div>
+                                <div class="wheel-segment" style="--i:7; --clr:#e74c3c;"><span>20,000 XU</span></div>
+                                <div class="wheel-segment" style="--i:8; --clr:#1abc9c;"><span>50,000 XU</span></div>
                             </div>
                         </div>
                     </div>
@@ -152,16 +152,13 @@
     <script>
         document.querySelectorAll('.nav-item').forEach(button => {
             button.addEventListener('click', () => {
-                // Xóa trạng thái active cũ
                 document.querySelectorAll('.nav-item').forEach(btn => btn.classList.remove('active'));
                 document.querySelectorAll('.app-tab-content').forEach(tab => tab.classList.add('hidden'));
                 
-                // Kích hoạt tab mới
                 button.classList.add('active');
                 const targetTabId = button.getAttribute('data-target');
                 document.getElementById(targetTabId).classList.remove('hidden');
 
-                // Kích hoạt phản hồi rung phần cứng nếu chạy trong Telegram App thật
                 if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
                     window.Telegram.WebApp.HapticFeedback.impactOccurred('light');
                 }
