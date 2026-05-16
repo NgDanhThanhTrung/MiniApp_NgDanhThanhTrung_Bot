@@ -41,16 +41,18 @@ let serverUserState = {
 
 // Mảng phần thưởng khớp chính xác 100% với góc quay CSS và các ô trên index.html
 const WHEEL_REWARDS = [
-    { text: "1,000 XU",  value: 1000 },
-    { text: "5,000 XU",  value: 5000 },
-    { text: "MẤT LƯỢT",  value: 0 },
-    { text: "10,000 XU", value: 10000 },
-    { text: "500 XU",    value: 500 },
-    { text: "20,000 XU", value: 20000 },
-    { text: "MẤT LƯỢT",  value: 0 },
-    { text: "50,000 XU", value: 50000 }
+    { text: "10K XU",   value: 10000 },
+    { text: "MẤT LƯỢT", value: 0 },
+    { text: "50K XU",   value: 50000 },
+    { text: "THÊM LƯỢT", value: 0 }, // Logic xử lý thêm lượt quay được quản lý riêng
+    { text: "5K XU",    value: 5000 },
+    { text: "CHIA ĐÔI",  value: 0 },
+    { text: "100K XU",  value: 100000 },
+    { text: "X2 XU",     value: 0 }
 ];
 
+// 🌟 VÁ LỖI CỐT LÕI: Khai báo biến toàn cục tích lũy góc xoay vật lý để vòng quay hoạt động
+let wheelRotation = 0; 
 let isSpinning = false;
 
 // Hàm kích hoạt phản hồi rung trên thiết bị di động
@@ -68,22 +70,16 @@ function triggerHaptic(type = 'light') {
 
 // Hàm hiển thị thông báo Toast nhanh góc dưới màn hình
 function showToast(message) {
-    let toast = document.getElementById('toast');
-    if (!toast) {
-        toast = document.createElement('div');
-        toast.id = 'toast';
-        toast.className = 'toast hidden';
-        document.body.appendChild(toast);
-    }
+    let toast = document.getElementById('toast-container');
+    if (!toast) return;
+    
     toast.innerText = message;
-    toast.classList.remove('hidden');
     toast.style.opacity = '1';
     toast.style.transform = 'translateX(-50%) translateY(0)';
     
     setTimeout(() => {
         toast.style.opacity = '0';
         toast.style.transform = 'translateX(-50%) translateY(8px)';
-        setTimeout(() => toast.classList.add('hidden'), 200);
     }, 3000);
 }
 
@@ -146,25 +142,35 @@ function updateUI() {
         const u = tg.initDataUnsafe.user;
         usernameDisplay = u.first_name + (u.last_name ? " " + u.last_name : "");
         
-        // Cập nhật Link mời bạn bè độc quyền tại Tab 2 khớp với Ref cấu trúc mới
-        if (u.id) {
-            document.getElementById('share-url-text').value = `https://t.me/SieuCapCayXu_NDTTrung_Bot/app?startapp=ref_${u.id}`;
+        // Cập nhật Link mời bạn bè độc quyền tại Tab 2 khớp với cấu trúc index.html mới
+        if (u.id && document.getElementById('share-link')) {
+            document.getElementById('share-link').value = `https://t.me/SieuCapCayXu_NDTTrung_Bot/app?startapp=ref_${u.id}`;
         }
     }
-    document.getElementById('username').innerText = usernameDisplay;
+    if (document.getElementById('username')) {
+        document.getElementById('username').innerText = usernameDisplay;
+    }
 
     // Cập nhật số dư và số tiền VNĐ ước lượng trực quan công khai
     const coins = serverUserState.coins || 0;
-    document.getElementById('user-points').innerText = coins.toLocaleString('en-US');
+    if (document.getElementById('user-points')) {
+        document.getElementById('user-points').innerText = coins.toLocaleString('en-US');
+    }
     
-    const vndEstimation = Math.floor(coins / CONFIG.COIN_TO_VND_RATE);
-    document.getElementById('vnd-estimation').innerText = vndEstimation.toLocaleString('vi-VN');
+    if (document.getElementById('vnd-estimation')) {
+        const vndEstimation = Math.floor(coins / CONFIG.COIN_TO_VND_RATE);
+        document.getElementById('vnd-estimation').innerText = vndEstimation.toLocaleString('vi-VN');
+    }
 
-    // 🌟 ĐỒNG BỘ ĐỒNG THỜI: Cập nhật số lượt quay khả dụng ở cả 2 thẻ hiển thị mới trên index.html
-    const spins = serverUserState.spinsLeft ?? 0;
-    document.getElementById('user-spins').innerText = spins;
-    if (document.getElementById('user-spins-badge')) {
-        document.getElementById('user-spins-badge').innerText = spins;
+    // Cập nhật số lượt quay khả dụng và bộ đếm mốc giới hạn ngày
+    if (document.getElementById('user-spins')) {
+        document.getElementById('user-spins').innerText = serverUserState.spinsLeft ?? 0;
+    }
+    if (document.getElementById('daily-spin-count')) {
+        document.getElementById('daily-spin-count').innerText = `${serverUserState.dailySpinsCount || 0}/${CONFIG.MAX_DAILY_SPINS}`;
+    }
+    if (document.getElementById('daily-ads-count')) {
+        document.getElementById('daily-ads-count').innerText = `${serverUserState.dailyAdsCount || 0}/${CONFIG.MAX_DAILY_ADS} hôm nay`;
     }
 }
 
@@ -177,50 +183,54 @@ function runCooldownTimers() {
 
         // 1. Quản lý trạng thái và bộ đếm chữ nút Vòng quay
         const btnSpin = document.getElementById('btn-spin');
-        if (!isSpinning) {
-            const spinTime = Math.floor((now - serverUserState.lastSpinTimestamp) / 1000);
-            const spinTimerEl = document.getElementById('spin-timer');
-            
-            if (serverUserState.dailySpinsCount >= CONFIG.MAX_DAILY_SPINS) {
-                btnSpin.innerText = `❌ ĐÃ HẾT HẠN MỨC NGÀY`;
-                btnSpin.disabled = true;
-                spinTimerEl.classList.add('hidden');
-            } else if (spinTime < CONFIG.SPIN_COOLDOWN) {
-                const remains = CONFIG.SPIN_COOLDOWN - spinTime;
-                btnSpin.innerText = `⏳ HỒI CHIÊU: ${remains}s`;
-                btnSpin.disabled = true;
+        const spinCooldownEl = document.getElementById('spin-cooldown');
+        
+        if (btnSpin && spinCooldownEl) {
+            if (!isSpinning) {
+                const spinTime = Math.floor((now - serverUserState.lastSpinTimestamp) / 1000);
                 
-                // Đồng bộ hiển thị dòng text nhỏ thông báo đếm ngược phía dưới nút bấm
-                spinTimerEl.classList.remove('hidden');
-                spinTimerEl.querySelector('span').innerText = `00:${remains.toString().padStart(2, '0')}`;
-            } else {
-                btnSpin.innerText = `🎡 QUAY NGAY`;
-                btnSpin.disabled = false;
-                spinTimerEl.classList.add('hidden');
+                if (serverUserState.dailySpinsCount >= CONFIG.MAX_DAILY_SPINS) {
+                    btnSpin.innerText = `❌ HẾT HẠN MỨC NGÀY`;
+                    btnSpin.disabled = true;
+                    spinCooldownEl.classList.add('hidden');
+                } else if (spinTime < CONFIG.SPIN_COOLDOWN) {
+                    const remains = CONFIG.SPIN_COOLDOWN - spinTime;
+                    btnSpin.innerText = `⏳ ĐANG HỒI NĂNG LƯỢNG`;
+                    btnSpin.disabled = true;
+                    
+                    spinCooldownEl.classList.remove('hidden');
+                    spinCooldownEl.querySelector('span').innerText = remains;
+                } else {
+                    btnSpin.innerText = `🎡 QUAY NGAY`;
+                    btnSpin.disabled = false;
+                    spinCooldownEl.classList.add('hidden');
+                }
             }
         }
 
         // 2. Quản lý trạng thái và bộ đếm chữ nút Xem Video Ads
-        const btnAds = document.getElementById('btn-watch-ads');
-        const adsTime = Math.floor((now - serverUserState.lastAdsTimestamp) / 1000);
-        const adsTimerEl = document.getElementById('ads-timer');
+        const btnAds = document.getElementById('btn-watch-ad');
+        const adCooldownEl = document.getElementById('ad-cooldown');
+        
+        if (btnAds && adCooldownEl) {
+            const adsTime = Math.floor((now - serverUserState.lastAdsTimestamp) / 1000);
 
-        if (serverUserState.dailyAdsCount >= CONFIG.MAX_DAILY_ADS) {
-            btnAds.innerHTML = `❌ ĐÃ HẾT LƯỢT XEM HÔM NAY`;
-            btnAds.disabled = true;
-            adsTimerEl.classList.add('hidden');
-        } else if (adsTime < CONFIG.ADS_COOLDOWN) {
-            const remains = CONFIG.ADS_COOLDOWN - adsTime;
-            btnAds.innerHTML = `⏳ CHỜ ADS: ${remains}s`;
-            btnAds.disabled = true;
-            
-            // Đồng bộ hiển thị dòng text nhỏ thông báo đếm ngược phía dưới nút bấm
-            adsTimerEl.classList.remove('hidden');
-            adsTimerEl.querySelector('span').innerText = `00:${remains.toString().padStart(2, '0')}`;
-        } else {
-            btnAds.innerHTML = `📺 XEM ADS LẤY LƯỢT`;
-            btnAds.disabled = false;
-            adsTimerEl.classList.add('hidden');
+            if (serverUserState.dailyAdsCount >= CONFIG.MAX_DAILY_ADS) {
+                btnAds.innerText = `❌ ĐÃ HẾT LƯỢT XEM HÔM NAY`;
+                btnAds.disabled = true;
+                adCooldownEl.classList.add('hidden');
+            } else if (adsTime < CONFIG.ADS_COOLDOWN) {
+                const remains = CONFIG.ADS_COOLDOWN - adsTime;
+                btnAds.innerText = `⏳ CHỜ ADS: ${remains}s`;
+                btnAds.disabled = true;
+                
+                adCooldownEl.classList.remove('hidden');
+                adCooldownEl.querySelector('span').innerText = remains;
+            } else {
+                btnAds.innerText = `▶ Xem Video Quảng Cáo`;
+                btnAds.disabled = false;
+                adCooldownEl.classList.add('hidden');
+            }
         }
     }, 1000);
 }
@@ -261,11 +271,14 @@ async function handleLuckyWheel() {
     const degreesPerSegment = 360 / 8;
     const extraRounds = 5 * 360; // Xoay gia tốc tít mắt 5 vòng tròn lớn
     
-    // Tính toán góc đảo ngược chuẩn theo chiều kim đồng hồ tương ứng mảng WHEEL_REWARDS
+    // Tính toán góc xoay vật lý lũy tiến chuẩn xác hướng tâm khớp với index.html mới
     wheelRotation += extraRounds + (360 - (targetIndex * degreesPerSegment)) - (wheelRotation % 360);
 
+    // Đồng bộ gọi chuẩn ID "wheel" bọc các segment trong index.html
     const wheel = document.getElementById('wheel');
-    wheel.style.transform = `rotate(${wheelRotation}deg)`;
+    if (wheel) {
+        wheel.style.transform = `rotate(${wheelRotation}deg)`;
+    }
 
     // Đợi hiệu ứng CSS hoàn thành trong 4 giây tĩnh
     setTimeout(async () => {
@@ -279,7 +292,7 @@ async function handleLuckyWheel() {
             showToast(`🎉 Tuyệt vời! Bạn đã quay trúng +${prize.value.toLocaleString()} Xu!`);
         } else {
             triggerHaptic('medium');
-            showToast("😢 Ôi trúng ô Mất Lượt rồi, chúc bạn may mắn lần sau!");
+            showToast(`😢 Ôi trúng ô ${prize.text} rồi, chúc bạn may mắn lần sau!`);
         }
     }, 4000);
 }
@@ -303,13 +316,11 @@ function handleWatchAds() {
     triggerHaptic('light');
 
     if (window.Adsgram) {
-        // Khởi tạo Video sạc quảng cáo thực tế từ AdsGram Widget Block
-        // Hãy cấu hình dán đúng Block ID thật của bạn vào chuỗi bên dưới khi được duyệt
+        // Hãy cấu hình dán đúng Block ID thật của bạn vào chuỗi bên dưới khi được duyệt từ Adsgram
         const AdController = window.Adsgram.createAdController('YOUR_BLOCK_ID');
         showToast("🔄 Đang kết nối luồng AdsGram...");
         
         AdController.show().then(async () => {
-            // Người dùng xem trọn vẹn 100% độ dài quảng cáo thành công
             const ok = await postAssetUpdate('watch_ads_success');
             if (ok) {
                 triggerHaptic('success');
@@ -343,66 +354,87 @@ document.addEventListener('DOMContentLoaded', () => {
     // 2. Kích hoạt luồng chạy ngầm tính toán Cooldown từng giây liên tục
     runCooldownTimers();
 
-    // Ràng buộc các sự kiện điều hành click chức năng chính
-    document.getElementById('btn-spin').addEventListener('click', handleLuckyWheel);
-    document.getElementById('btn-watch-ads').addEventListener('click', handleWatchAds);
+    // Ràng buộc các sự kiện điều hành click chức năng chính khớp ID mới
+    if (document.getElementById('btn-spin')) {
+        document.getElementById('btn-spin').addEventListener('click', handleLuckyWheel);
+    }
+    if (document.getElementById('btn-watch-ad')) {
+        document.getElementById('btn-watch-ad').addEventListener('click', handleWatchAds);
+    }
 
-    // 3. Xử lý sự kiện click gửi link chia sẻ mời bạn bè tại Tab 2
-    document.getElementById('btn-invite-friend').addEventListener('click', () => {
-        triggerHaptic('light');
-        const shareUrl = document.getElementById('share-url-text').value;
-        const textInvite = encodeURIComponent("🔥 Vào cày xu đổi tiền mặt và TON với mình cực dễ trên Telegram! Rút tiền uy tín cực kỳ luôn 👇");
-        const telegramShareLink = `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${textInvite}`;
-        
-        if (tg && tg.openTelegramLink) {
-            tg.openTelegramLink(telegramShareLink);
-        } else {
-            window.open(telegramShareLink, '_blank');
-        }
-    });
-
-    // 4. Xử lý nộp đơn gửi lệnh tạo yêu cầu rút tiền mặt/TON phân luồng logic mới
-    document.getElementById('btn-submit-withdraw').addEventListener('click', async () => {
-        const method = document.getElementById('withdraw-method').value;
-        const address = document.getElementById('withdraw-address').value.trim();
-        const amount = parseInt(document.getElementById('withdraw-amount').value, 10);
-
-        // Hạn mức rút tối thiểu theo logic mới: 2,000 VNĐ = 2,000,000 Xu (Áp dụng riêng cho Momo và Bank)
-        const MIN_COINS_REQUIRED = 2000000; 
-
-        if (!address || isNaN(amount) || amount <= 0) {
-            triggerHaptic('error');
-            showToast("❌ Vui lòng nhập đầy đủ địa chỉ và số xu rút hợp lệ!");
-            return;
-        }
-
-        // Nếu người chơi chọn rút MoMo hoặc Ngân hàng, Backend + Frontend bắt buộc kiểm tra hạn mức >= 2 triệu xu
-        if ((method === 'momo' || method === 'bank') && amount < MIN_COINS_REQUIRED) {
-            triggerHaptic('error');
-            showToast(`❌ MoMo/Ngân hàng yêu cầu rút tối thiểu từ ${MIN_COINS_REQUIRED.toLocaleString()} Xu!`);
-            return;
-        }
-
-        if (amount > serverUserState.coins) {
-            triggerHaptic('error');
-            showToast("❌ Số dư khả dụng trong tài khoản hiện tại không đủ!");
-            return;
-        }
-
-        // Đẩy đơn rút tiền lên hàng chờ bộ não Server duyệt bắn cảnh báo tin nhắn Telegram
-        const ok = await postAssetUpdate('withdraw_request', { 
-            withdrawMethod: method, 
-            withdrawAddress: address, 
-            withdrawAmount: amount 
+    // 3. Xử lý sao chép link mời nhanh ở Tab 2
+    if (document.getElementById('btn-copy-link')) {
+        document.getElementById('btn-copy-link').addEventListener('click', () => {
+            triggerHaptic('light');
+            const shareUrlText = document.getElementById('share-link');
+            if (shareUrlText) {
+                shareUrlText.select();
+                shareUrlText.setSelectionRange(0, 99999);
+                navigator.clipboard.writeText(shareUrlText.value);
+                showToast("📋 Đã sao chép liên kết mời thành công!");
+            }
         });
-        
-        if (ok) {
-            // Xóa sạch bộ form dữ liệu biểu mẫu sau khi đẩy đơn thành công ngầm lên RAM
-            document.getElementById('withdraw-address').value = "";
-            document.getElementById('withdraw-amount').value = "";
-            triggerHaptic('success');
-            updateUI();
-            showToast("🎉 Lệnh rút tiền đã được gửi lên Chat duyệt của Admin!");
-        }
-    });
+    }
+
+    // 4. Xử lý sự kiện click gửi link chia sẻ mời bạn bè tại Tab 2
+    if (document.getElementById('btn-share-tg')) {
+        document.getElementById('btn-share-tg').addEventListener('click', () => {
+            triggerHaptic('light');
+            const shareUrl = document.getElementById('share-link').value;
+            const textInvite = encodeURIComponent("🔥 Vào cày xu đổi tiền mặt và TON với mình cực dễ trên Telegram! Rút tiền uy tín cực kỳ luôn 👇");
+            const telegramShareLink = `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${textInvite}`;
+            
+            if (tg && tg.openTelegramLink) {
+                tg.openTelegramLink(telegramShareLink);
+            } else {
+                window.open(telegramShareLink, '_blank');
+            }
+        });
+    }
+
+    // 5. Xử lý nộp đơn gửi lệnh tạo yêu cầu rút tiền mặt/TON phân luồng logic mới
+    if (document.getElementById('btn-submit-withdraw')) {
+        document.getElementById('btn-submit-withdraw').addEventListener('click', async () => {
+            const method = document.getElementById('withdraw-method').value;
+            const address = document.getElementById('withdraw-address').value.trim();
+            const amount = parseInt(document.getElementById('withdraw-amount').value, 10);
+
+            // Hạn mức rút tối thiểu theo logic mới: 2,000 VNĐ = 2,000,000 Xu (Áp dụng riêng cho Momo và Bank)
+            const MIN_COINS_REQUIRED = 2000000; 
+
+            if (!address || isNaN(amount) || amount <= 0) {
+                triggerHaptic('error');
+                showToast("❌ Vui lòng nhập đầy đủ địa chỉ và số xu rút hợp lệ!");
+                return;
+            }
+
+            // Kiểm tra hạn mức tối thiểu mốc 2 triệu xu cho Momo/Bank
+            if ((method === 'momo' || method === 'bank') && amount < MIN_COINS_REQUIRED) {
+                triggerHaptic('error');
+                showToast(`❌ MoMo/Ngân hàng yêu cầu rút tối thiểu từ ${MIN_COINS_REQUIRED.toLocaleString()} Xu!`);
+                return;
+            }
+
+            if (amount > serverUserState.coins) {
+                triggerHaptic('error');
+                showToast("❌ Số dư khả dụng trong tài khoản hiện tại không đủ!");
+                return;
+            }
+
+            // Đẩy đơn rút tiền lên hàng chờ bộ não Server duyệt bắn cảnh báo tin nhắn Telegram
+            const ok = await postAssetUpdate('withdraw_request', { 
+                withdrawMethod: method, 
+                withdrawAddress: address, 
+                withdrawAmount: amount 
+            });
+            
+            if (ok) {
+                document.getElementById('withdraw-address').value = "";
+                document.getElementById('withdraw-amount').value = "";
+                triggerHaptic('success');
+                updateUI();
+                showToast("🎉 Lệnh rút tiền đã được gửi lên Chat duyệt của Admin!");
+            }
+        });
+    }
 });
