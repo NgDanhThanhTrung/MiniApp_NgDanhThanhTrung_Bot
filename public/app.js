@@ -2,7 +2,7 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Frontend Logic API Engine (Chạy Nguyên Khối kết nối Realtime với RAM Server)
  * Năm vận hành: 2026
- * Phiên bản: 3.4.0 (Vá triệt để lỗi mất kết nối RAM và đồng nhất trường spinsLeft)
+ * Phiên bản: 3.4.5 (Khắc phục lỗi nạp chậm Adsgram & Đồng bộ spinsLeft cứng)
  */
 
 const tg = window.Telegram ? window.Telegram.WebApp : null;
@@ -22,10 +22,11 @@ const CONFIG = {
     MAX_DAILY_ADS: 5,       
 };
 
+// ĐỒNG BỘ 100%: Khởi tạo chính xác trường spinsLeft giống hệt bộ não Server RAM
 let serverUserState = {
     id: 0,
     coins: 0,
-    spinsLeft: 0, // ĐỒNG BỘ CHUẨN: spinsLeft giống hệt Server RAM
+    spinsLeft: 0, 
     lastSpinTimestamp: 0,
     lastAdsTimestamp: 0,
     dailySpinsCount: 0,
@@ -66,7 +67,7 @@ async function postAssetUpdate(actionName, extraPayload = {}) {
     try {
         const initDataRaw = tg ? tg.initData : "";
         
-        // Gói tin truyền dữ liệu bổ sung phân định nếu đang chạy Sandbox test ngoài
+        // Đóng gói cẩn thận cờ báo hiệu nếu đang chạy Sandbox test ngoài Telegram
         const requestBody = { 
             initData: initDataRaw, 
             action: actionName, 
@@ -102,7 +103,7 @@ function updateUI() {
     const vndEstimation = Math.floor(serverUserState.coins / CONFIG.COIN_TO_VND_RATE);
     document.getElementById('vnd-estimation').innerText = vndEstimation.toLocaleString();
 
-    // SỬA LỖI ĐỒNG BỘ: Sử dụng chuẩn xác trường spinsLeft vừa mapping
+    // SỬA LỖI ĐỒNG BỘ: Điền chuẩn xác spinsLeft hiển thị lên thẻ tiến trình game
     document.getElementById('txt-spins-left').innerText = serverUserState.spinsLeft;
     document.getElementById('txt-daily-spins').innerText = `${serverUserState.dailySpinsCount}/${CONFIG.MAX_DAILY_SPINS}`;
     
@@ -146,7 +147,7 @@ document.getElementById('btn-spin').addEventListener('click', async () => {
 
     if (serverUserState.spinsLeft <= 0) {
         triggerHaptic('error');
-        showToast("❌ Bạn đã hết lượt quay khả dụng! Hãy xem Ads.");
+        showToast("❌ Bạn đã hết lượt quay khả dụng! Hãy xem Ads để nạp thêm.");
         return;
     }
 
@@ -178,7 +179,7 @@ document.getElementById('btn-spin').addEventListener('click', async () => {
     }, 4100);
 });
 
-// LOGIC XEM QUẢNG CÁO ADSGRAM THỰC TẾ
+// LOGIC XEM QUẢNG CÁO ADSGRAM (ĐÃ FIX KHÓA LUỒNG SĂN LÙNG BIẾN WINDOW CHUẨN 100%)
 document.getElementById('btn-watch-ad').addEventListener('click', async () => {
     const now = Date.now();
     if (serverUserState.lastAdsTimestamp && (now - serverUserState.lastAdsTimestamp < CONFIG.ADS_COOLDOWN * 1000)) {
@@ -197,10 +198,17 @@ document.getElementById('btn-watch-ad').addEventListener('click', async () => {
     const watchBtn = document.getElementById('btn-watch-ad');
     watchBtn.disabled = true;
 
-    // LUỒNG CHẠY CHUẨN KHI BẬT TRÊN MOBILE TELEGRAM CHÍNH THỨC (CÓ SDK)
+    // GIẢI PHÁP THÔNG MINH: Nếu đang chạy trên Telegram thật (có initData), ép luồng đợi SDK nạp trong 1.5 giây nếu cần
+    const isTelegramEnvironment = tg && tg.initData !== "";
+    if (isTelegramEnvironment && !window.Adsgram) {
+        showToast("⏳ Đang tối ưu hóa kết nối SDK Adsgram...");
+        await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+
+    // LUỒNG CHẠY KIẾM TIỀN THẬT (Khi biến window đã sẵn sàng trên Telegram)
     if (window.Adsgram) {
         showToast("🔄 Đang kết nối luồng quảng cáo Adsgram...");
-        const AdController = window.Adsgram.createAdController('30388'); 
+        const AdController = window.Adsgram.createAdController('30388'); // Khớp mã Active chính chủ
 
         try {
             await AdController.show();
@@ -221,7 +229,7 @@ document.getElementById('btn-watch-ad').addEventListener('click', async () => {
             watchBtn.disabled = false;
         }
     } 
-    // LUỒNG FAILBACK AN TOÀN KHI BẠN TEST TRÊN TRÌNH DUYỆT NGOÀI TELEGRAM CHỐNG SẬP
+    // LUỒNG GIẢ LẬP AN TOÀN TRÊN TRÌNH DUYỆT NGOÀI CHỐNG SẬP 
     else {
         showToast("📡 Phát hiện chạy ngoài Telegram. Kích hoạt trình giả lập Adsgram 2s...");
         setTimeout(async () => {
