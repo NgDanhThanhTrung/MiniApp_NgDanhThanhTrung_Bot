@@ -32,74 +32,114 @@
         <main class="content-body">
             
             <section id="tab-wheel" class="app-tab-content">
-                <div class="wheel-container">
-                    <div class="wheel-pointer">👇</div>
-                    <div id="lucky-wheel" class="wheel-canvas">
-                        <div class="wheel-segment" style="transform: rotate(0deg);"><span class="seg-txt">10,000</span></div>
-                        <div class="wheel-segment" style="transform: rotate(45deg);"><span class="seg-txt">200</span></div>
-                        <div class="wheel-segment" style="transform: rotate(90deg);"><span class="seg-txt">5,000</span></div>
-                        <div class="wheel-segment" style="transform: rotate(135deg);"><span class="seg-txt">1,000</span></div>
-                        <div class="wheel-segment" style="transform: rotate(180deg);"><span class="seg-txt">50,000</span></div>
-                        <div class="wheel-segment" style="transform: rotate(225deg);"><span class="seg-txt">2,000</span></div>
-                        <div class="wheel-segment" style="transform: rotate(270deg);"><span class="seg-txt">20,000</span></div>
-                        <div class="wheel-segment" style="transform: rotate(315deg);"><span class="seg-txt">500</span></div>
+                <div class="wheel-section">
+                    <div class="wheel-stats">
+                        <div class="stat-box">
+                            <span class="stat-label">Lượt quay còn lại</span>
+                            <span id="txt-spins-left" class="stat-value highlight">0</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Hạn mức quay hôm nay</span>
+                            <span id="txt-daily-spins" class="stat-value">0/10</span>
+                        </div>
                     </div>
-                    <button id="btn-spin" class="btn-primary-action">🎡 QUAY NGAY</button>
-                </div>
-                
-                <div class="status-dashboard">
-                    <div class="stat-box">
-                        <span class="stat-label">Lượt quay còn lại</span>
-                        <span id="txt-spins-left" class="stat-value">0</span>
+
+                    <div class="wheel-container">
+                        <div class="wheel-pointer">👇</div>
+                        <div id="wheel-wrapper">
+                            <div id="lucky-wheel" class="wheel-element">
+                                <div class="wheel-segment" style="--i:1; --clr:#ff4757;"><span class="seg-txt">10,000</span></div>
+                                <div class="wheel-segment" style="--i:2; --clr:#2ed573;"><span class="seg-txt">200</span></div>
+                                <div class="wheel-segment" style="--i:3; --clr:#1e90ff;"><span class="seg-txt">5,000</span></div>
+                                <div class="wheel-segment" style="--i:4; --clr:#ffa500;"><span class="seg-txt">1,000</span></div>
+                                <div class="wheel-segment" style="--i:5; --clr:#9b59b6;"><span class="seg-txt">50,000</span></div>
+                                <div class="wheel-segment" style="--i:6; --clr:#34495e;"><span class="seg-txt">2,000</span></div>
+                                <div class="wheel-segment" style="--i:7; --clr:#e74c3c;"><span class="seg-txt">20,000</span></div>
+                                <div class="wheel-segment" style="--i:8; --clr:#1abc9c;"><span class="seg-txt">500</span></div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="stat-box">
-                        <span class="stat-label">Hạn mức quay hôm nay</span>
-                        <span id="txt-daily-spins" class="stat-value">0/10</span>
+
+                    <div class="wheel-actions">
+                        <button id="btn-spin" class="btn btn-primary btn-lg pulse">🎡 QUAY NGAY</button>
                     </div>
                 </div>
 
-                <div class="ad-trigger-zone">
-                    <button id="btn-watch-ad" class="btn-secondary-action">▶ Xem Video Quảng Cáo (+12,000 Xu +1 Lượt)</button>
-                    <p class="ad-hint">Hạn mức xem quảng cáo hôm nay còn lại: <span id="txt-daily-ads">5/5</span> lượt</p>
+                <div class="ads-section">
+                    <div class="ads-header">
+                        <h3>📺 Xem Ads Nhận Lượt Quay</h3>
+                        <span id="txt-daily-ads" class="ads-badge">5/5 hôm nay</span>
+                    </div>
+                    <p class="ads-desc">Xem hết 15s quảng cáo từ đối tác Adsgram để nhận ngay +12,000 Xu & +1 lượt quay may mắn vào RAM.</p>
+                    <button id="btn-watch-ad" class="btn btn-secondary btn-block">▶ Xem Video Quảng Cáo</button>
                 </div>
             </section>
 
             <section id="tab-invite" class="app-tab-content hidden">
-                <div class="feature-card">
-                    <h2>👥 Mời Bạn Nhận Quà Khủng</h2>
-                    <p>Copy đường link độc quyền bên dưới gửi cho bạn bè qua chat Telegram để gia tăng tốc độ tích lũy khối tài sản Xu khổng lồ!</p>
+                <div class="invite-card">
+                    <div class="invite-icon">👥</div>
+                    <h2>Mời Bạn Nhận Quà Khủng</h2>
+                    <p class="invite-bonus">+10,000 COINS cho mỗi người bạn tham gia qua link của bạn!</p>
+                    <p class="ads-desc" style="text-align: center; margin-bottom: 16px;">Copy đường link độc quyền bên dưới gửi cho bạn bè qua chat Telegram để gia tăng tốc độ tích lũy khối tài sản Xu khổng lồ!</p>
+                    
                     <div class="referral-box">
-                        <input type="text" id="referral-url" readonly value="Đang tải link...">
-                        <button id="btn-copy-ref" class="btn-small">Sao Chép</button>
+                        <label class="ref-label">ĐƯỜNG DẪN GIỚI THIỆU CỦA BẠN:</label>
+                        <div class="link-input-group">
+                            <input type="text" id="referral-url" readonly value="Đang tải link...">
+                            <button id="btn-copy-ref" class="btn btn-small">Sao Chép</button>
+                        </div>
                     </div>
                 </div>
             </section>
 
             <section id="tab-withdraw" class="app-tab-content hidden">
-                <div class="feature-card">
-                    <h2>💳 Đổi Thưởng & Rút Tiền Mặt</h2>
-                    <p class="alert-box-info">⚠️ Hạn mức rút tối thiểu cho MoMo/Ngân hàng: <b>2,000,000 Xu (= 2,000 VNĐ)</b>. Hệ thống TON Network được tự do quy đổi ngầm.</p>
-                    
-                    <div class="form-group">
-                        <label for="withdraw-method">Chọn phương thức:</label>
-                        <select id="withdraw-method">
-                            <option value="momo">Ví Điện Tử MoMo</option>
-                            <option value="bank">Ngân Hàng Nội Địa (Vietcombank/MB...)</option>
-                            <option value="ton">Mạng Lưới Tiền Số TON Network (Crypto)</option>
-                        </select>
+                <div class="withdraw-card">
+                    <div class="withdraw-header">
+                        <h2>💳 Đổi Thưởng & Rút Tiền Mặt</h2>
+                        <p class="rate-note">Tỷ giá cố định: 1.000 Xu = 1 VNĐ. Duyệt lệnh tự động qua Bot Telegram.</p>
                     </div>
 
-                    <div class="form-group">
-                        <label id="lbl-address" for="withdraw-address">Số điện thoại Ví MoMo:</label>
-                        <input type="text" id="withdraw-address" placeholder="Ví dụ: 0987654321">
-                    </div>
+                    <table class="rates-table">
+                        <thead>
+                            <tr>
+                                <th>Hình thức nhận</th>
+                                <th>Hạn mức tối thiểu</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><span class="badge bank">MoMo / BANK</span></td>
+                                <td class="highlight-coins">2,000,000 Xu (= 2,000đ)</td>
+                            </tr>
+                            <tr>
+                                <td><span class="badge ton-crypto">TON Crypto</span></td>
+                                <td class="highlight-coins">Được tự do quy đổi ngầm</td>
+                            </tr>
+                        </tbody>
+                    </table>
 
-                    <div class="form-group">
-                        <label for="withdraw-amount">Số lượng Xu muốn rút:</label>
-                        <input type="number" id="withdraw-amount" placeholder="Nhập số xu tối thiểu 2,000,000">
-                    </div>
+                    <div class="form-container" style="text-align: left;">
+                        <div class="form-group">
+                            <label for="withdraw-method">Chọn phương thức:</label>
+                            <select id="withdraw-method" class="form-control">
+                                <option value="momo">Ví Điện Tử MoMo</option>
+                                <option value="bank">Ngân Hàng Nội Địa (Vietcombank/MB...)</option>
+                                <option value="ton">Mạng Lưới Tiền Số TON Network (Crypto)</option>
+                            </select>
+                        </div>
 
-                    <button id="btn-submit-withdraw" class="btn-primary-action" style="background: #e57373;">🚀 TẠO LỆNH RÚT TIỀN</button>
+                        <div class="form-group">
+                            <label id="lbl-address" for="withdraw-address">Số điện thoại Ví MoMo:</label>
+                            <input type="text" id="withdraw-address" class="form-control" placeholder="Ví dụ: 0987654321">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="withdraw-amount">Số lượng Xu muốn rút:</label>
+                            <input type="number" id="withdraw-amount" class="form-control" placeholder="Nhập số xu tối thiểu 2,000,000">
+                        </div>
+
+                        <button id="btn-submit-withdraw" class="btn btn-success btn-block">🚀 TẠO LỆNH RÚT TIỀN</button>
+                    </div>
                 </div>
             </section>
 
