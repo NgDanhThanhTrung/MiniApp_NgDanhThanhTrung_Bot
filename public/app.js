@@ -208,7 +208,7 @@ document.getElementById('btn-watch-ad').addEventListener('click', async () => {
         showToast("🔄 Đang kết nối luồng quảng cáo Adsgram...");
         
         // SỬA TRỰC TIẾP Ở ĐÂY: Thay sang '30379' để luân chuyển video chạy thử nghiệm 100% hiện lên lập tức!
-        const AdController = window.Adsgram.createAdController('30379'); 
+        const AdController = window.Adsgram.createAdController('30388'); 
 
         try {
             await AdController.show(); // Bật bảng video quảng cáo mẫu lên màn hình
