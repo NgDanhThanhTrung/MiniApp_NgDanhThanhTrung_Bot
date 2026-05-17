@@ -2,7 +2,7 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Frontend Logic API Engine (Chạy Nguyên Khối kết nối Realtime với RAM Server)
  * Năm vận hành: 2026
- * Phiên bản: 3.3.0 (Đồng bộ tuyệt đối UnitID 30388 & Cơ chế Auto-Failback Sandbox)
+ * Phiên bản: 3.4.0 (Vá triệt để lỗi mất kết nối RAM và đồng nhất trường spinsLeft)
  */
 
 const tg = window.Telegram ? window.Telegram.WebApp : null;
@@ -25,7 +25,7 @@ const CONFIG = {
 let serverUserState = {
     id: 0,
     coins: 0,
-    spinsLeft: 0,
+    spinsLeft: 0, // ĐỒNG BỘ CHUẨN: spinsLeft giống hệt Server RAM
     lastSpinTimestamp: 0,
     lastAdsTimestamp: 0,
     dailySpinsCount: 0,
@@ -65,15 +65,19 @@ async function fetchUserAccountData() {
 async function postAssetUpdate(actionName, extraPayload = {}) {
     try {
         const initDataRaw = tg ? tg.initData : "";
-        if (!initDataRaw) {
-            handleDevSandboxFallback(actionName, extraPayload);
-            return true;
-        }
+        
+        // Gói tin truyền dữ liệu bổ sung phân định nếu đang chạy Sandbox test ngoài
+        const requestBody = { 
+            initData: initDataRaw, 
+            action: actionName, 
+            isSandboxDev: !initDataRaw,
+            ...extraPayload 
+        };
 
         const response = await fetch(`${BACKEND_API_URL}/api/update-assets`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ initData: initDataRaw, action: actionName, ...extraPayload })
+            body: JSON.stringify(requestBody)
         });
 
         if (response.ok) {
@@ -91,20 +95,6 @@ async function postAssetUpdate(actionName, extraPayload = {}) {
     }
 }
 
-function handleDevSandboxFallback(action, payload) {
-    if (action === 'spin_start') {
-        serverUserState.spinsLeft -= 1;
-        serverUserState.dailySpinsCount += 1;
-    } else if (action === 'spin_reward') {
-        serverUserState.coins += parseInt(payload.rewardCoins, 10);
-    } else if (action === 'watch_ads_success') {
-        serverUserState.coins += 12000;
-        serverUserState.spinsLeft += 1;
-        serverUserState.dailyAdsCount += 1;
-    }
-    updateUI();
-}
-
 function updateUI() {
     document.getElementById('username').innerText = serverUserState.username ? `@${serverUserState.username}` : (serverUserState.first_name || "Hội viên");
     document.getElementById('user-points').innerText = serverUserState.coins.toLocaleString();
@@ -112,6 +102,7 @@ function updateUI() {
     const vndEstimation = Math.floor(serverUserState.coins / CONFIG.COIN_TO_VND_RATE);
     document.getElementById('vnd-estimation').innerText = vndEstimation.toLocaleString();
 
+    // SỬA LỖI ĐỒNG BỘ: Sử dụng chuẩn xác trường spinsLeft vừa mapping
     document.getElementById('txt-spins-left').innerText = serverUserState.spinsLeft;
     document.getElementById('txt-daily-spins').innerText = `${serverUserState.dailySpinsCount}/${CONFIG.MAX_DAILY_SPINS}`;
     
@@ -153,6 +144,12 @@ document.getElementById('btn-spin').addEventListener('click', async () => {
         return;
     }
 
+    if (serverUserState.spinsLeft <= 0) {
+        triggerHaptic('error');
+        showToast("❌ Bạn đã hết lượt quay khả dụng! Hãy xem Ads.");
+        return;
+    }
+
     const approved = await postAssetUpdate('spin_start');
     if (!approved) return;
 
@@ -181,7 +178,7 @@ document.getElementById('btn-spin').addEventListener('click', async () => {
     }, 4100);
 });
 
-// LOGIC XEM QUẢNG CÁO ADSGRAM THỰC TẾ (TÍCH HỢP ĐỒNG BỘ AUTO-FAILBACK)
+// LOGIC XEM QUẢNG CÁO ADSGRAM THỰC TẾ
 document.getElementById('btn-watch-ad').addEventListener('click', async () => {
     const now = Date.now();
     if (serverUserState.lastAdsTimestamp && (now - serverUserState.lastAdsTimestamp < CONFIG.ADS_COOLDOWN * 1000)) {
@@ -203,7 +200,7 @@ document.getElementById('btn-watch-ad').addEventListener('click', async () => {
     // LUỒNG CHẠY CHUẨN KHI BẬT TRÊN MOBILE TELEGRAM CHÍNH THỨC (CÓ SDK)
     if (window.Adsgram) {
         showToast("🔄 Đang kết nối luồng quảng cáo Adsgram...");
-        const AdController = window.Adsgram.createAdController('30388'); // UnitID thật của bạn
+        const AdController = window.Adsgram.createAdController('30388'); 
 
         try {
             await AdController.show();
@@ -272,15 +269,6 @@ document.getElementById('btn-submit-withdraw').addEventListener('click', async (
         triggerHaptic('success');
         showToast("🎉 Lệnh rút tiền đã gửi tới Admin phê duyệt!");
     }
-});
-
-document.getElementById('btn-copy-ref').addEventListener('click', () => {
-    const copyText = document.getElementById('referral-url');
-    copyText.select();
-    copyText.setSelectionRange(0, 99999); 
-    navigator.clipboard.writeText(copyText.value);
-    triggerHaptic('light');
-    showToast("📋 Đã sao chép link mời Bot thành công!");
 });
 
 window.addEventListener('DOMContentLoaded', fetchUserAccountData);
