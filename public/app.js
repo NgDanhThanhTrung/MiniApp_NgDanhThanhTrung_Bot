@@ -2,7 +2,7 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Frontend Logic API Engine (Chạy Nguyên Khối kết nối Realtime với RAM Server)
  * Năm vận hành: 2026
- * Phiên bản: 3.7.0 (Dỡ bỏ hoàn toàn Cooldown thời gian chờ & Thắt chặt thưởng Ads thật)
+ * Phiên bản: 4.0.0 (Tái cấu trúc Web URL đồng nhất - Bỏ Cooldown - Khớp UnitID 30388)
  */
 
 const tg = window.Telegram ? window.Telegram.WebApp : null;
@@ -17,9 +17,10 @@ if (tg) {
 const CONFIG = {
     COIN_TO_VND_RATE: 1000, 
     MAX_DAILY_SPINS: 10,
-    MAX_DAILY_ADS: 5, // Vẫn giữ nguyên giới hạn hạn mức ngày nếu bạn muốn kiểm soát tài chính       
+    MAX_DAILY_ADS: 5,       
 };
 
+// Đồng bộ trường spinsLeft với Server RAM
 let serverUserState = {
     id: 0,
     coins: 0,
@@ -61,20 +62,22 @@ async function fetchUserAccountData() {
     }
 }
 
+// THAY ĐỔI CẤU TRÚC: Chuyển toàn bộ luồng truyền dữ liệu sang URL Query Parameter sạch
 async function postAssetUpdate(actionName, extraPayload = {}) {
     try {
         const initDataRaw = tg ? tg.initData : "";
-        const requestBody = { 
-            initData: initDataRaw, 
-            action: actionName, 
+        
+        // Tạo chuỗi truy vấn Query đồng nhất chuẩn Web bảo mật
+        const queryParams = new URLSearchParams({
+            userId: serverUserState.id || 99999,
+            action: actionName,
             isSandboxDev: !initDataRaw,
-            ...extraPayload 
-        };
+            ...extraPayload
+        });
 
-        const response = await fetch(`${BACKEND_API_URL}/api/update-assets`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody)
+        const response = await fetch(`${BACKEND_API_URL}/api/user/update?${queryParams.toString()}`, {
+            method: 'GET', // Chuyển sang GET để đồng bộ hoàn toàn với Reward URL Adsgram
+            headers: { 'Content-Type': 'application/json' }
         });
 
         if (response.ok) {
@@ -87,7 +90,7 @@ async function postAssetUpdate(actionName, extraPayload = {}) {
             return false;
         }
     } catch (err) {
-        showToast("❌ Cổng mạng nghẽn, không thể kết nối tới Server.");
+        showToast("❌ Kết nối RAM thất bại, vui lòng kiểm tra mạng!");
         return false;
     }
 }
@@ -137,8 +140,6 @@ function showToast(message) {
 document.getElementById('btn-spin').addEventListener('click', async () => {
     if (isWheelSpinning) return;
 
-    // ĐÃ GỠ BỎ: Không còn đoạn check n-giây hồi năng lượng ở đây nữa!
-
     if (serverUserState.spinsLeft <= 0) {
         triggerHaptic('error');
         showToast("❌ Bạn đã hết lượt quay khả dụng! Hãy xem Ads.");
@@ -147,7 +148,7 @@ document.getElementById('btn-spin').addEventListener('click', async () => {
 
     if (serverUserState.dailySpinsCount >= CONFIG.MAX_DAILY_SPINS) {
         triggerHaptic('error');
-        showToast("❌ Bạn đã đạt giới hạn vòng quay khả dụng của ngày hôm nay.");
+        showToast("❌ Bạn đã đạt giới hạn vòng quay của ngày hôm nay.");
         return;
     }
 
@@ -179,10 +180,8 @@ document.getElementById('btn-spin').addEventListener('click', async () => {
     }, 4100);
 });
 
-// LOGIC XEM QUẢNG CÁO ADSGRAM (ĐÃ XÓA COOLDOWN & ÉP XEM THÀNH CÔNG 100% TRÊN TELEGRAM)
+// LOGIC XEM QUẢNG CÁO ADSGRAM (XÓA COOLDOWN & ÉP CHẠY THẬT THÀNH CÔNG)
 document.getElementById('btn-watch-ad').addEventListener('click', async () => {
-    // ĐÃ GỠ BỎ: Không còn đoạn check CONFIG.ADS_COOLDOWN thời gian chuẩn bị video kế tiếp nữa!
-
     if (serverUserState.dailyAdsCount >= CONFIG.MAX_DAILY_ADS) {
         triggerHaptic('error');
         showToast("❌ Bạn đã cày hết sạch giới hạn quảng cáo của ngày hôm nay.");
@@ -195,12 +194,12 @@ document.getElementById('btn-watch-ad').addEventListener('click', async () => {
     // LUỒNG CHẠY KIẾM TIỀN THẬT TRÊN TELEGRAM CHÍNH THỨC
     if (window.Adsgram) {
         showToast("🔄 Đang kết nối luồng quảng cáo Adsgram...");
-        const AdController = window.Adsgram.createAdController('30388'); // Mã Active kiếm tiền thật của bạn
+        const AdController = window.Adsgram.createAdController('30388'); // Khớp mã UnitID Active thật của bạn
 
         try {
             await AdController.show(); // Ép bật bảng video quảng cáo thật lên màn hình
             
-            // CHỈ KHI XEM THÀNH CÔNG 100%: Code mới chạy xuống dòng dưới để gửi lệnh cộng tiền lên RAM
+            // CHỈ KHI XEM THÀNH CÔNG: Code mới chạy xuống dòng dưới để gọi Server cộng xu vào RAM
             showToast("⏳ Đang đồng bộ phần thưởng lên RAM...");
             const ok = await postAssetUpdate('watch_ads_success');
             if (ok) {
@@ -218,7 +217,7 @@ document.getElementById('btn-watch-ad').addEventListener('click', async () => {
             watchBtn.disabled = false;
         }
     } 
-    // LUỒNG BẢO VỆ TUYỆT ĐỐI: Khi chạy ngoài web thường, không có Ads thực chạy thành công -> BÁO LỖI VÀ KHÔNG CỘNG XU LẬU
+    // LUỒNG BẢO VỆ TUYỆT ĐỐI: Chạy ngoài Web thường không hiện Ads thật -> BÁO LỖI VÀ CHẶN KHÔNG CỘNG XU LẬU
     else {
         triggerHaptic('error');
         showToast("❌ Lỗi: Không chạy được quảng cáo thực tế! Bạn KHÔNG nhận được phần thưởng.");
@@ -252,7 +251,12 @@ document.getElementById('btn-submit-withdraw').addEventListener('click', async (
         triggerHaptic('error'); showToast("❌ Số dư tài khoản không đủ!"); return;
     }
 
-    const ok = await postAssetUpdate('withdraw_request', { withdrawMethod: method, withdrawAddress: address, withdrawAmount: amount });
+    const ok = await postAssetUpdate('withdraw_request', { 
+        withdrawMethod: method, 
+        withdrawAddress: address, 
+        withdrawAmount: amount 
+    });
+    
     if (ok) {
         document.getElementById('withdraw-address').value = "";
         document.getElementById('withdraw-amount').value = "";
@@ -273,7 +277,6 @@ document.getElementById('btn-copy-ref').addEventListener('click', () => {
     try {
         const success = document.execCommand('copy');
         copyText.setAttribute('readonly', 'readonly');
-        
         if (success) {
             triggerHaptic('light');
             showToast("📋 Đã sao chép link mời thành công!");
@@ -292,7 +295,7 @@ document.getElementById('btn-copy-ref').addEventListener('click', () => {
     }
 });
 
-// GỬI TIẾP LINK MỜI TRỰC TIẾP QUA NATIVE CHAT TELEGRAM
+// GỬI LINK TRỰC TIẾP QUA NATIVE CHAT TELEGRAM
 document.getElementById('btn-share-ref').addEventListener('click', () => {
     const refLink = document.getElementById('referral-url').value;
     const inviteMessage = encodeURIComponent("Vào cày xu với tớ đi! Nhận ngay 50,000 Xu tân thủ cực hot tại đây: ");
