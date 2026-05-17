@@ -2,7 +2,7 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Monolith Server Engine (Bot Control, RAM Storage, API Hosting & Anti-Sleep)
  * Năm vận hành: 2026
- * Phiên bản: 3.5.0 (Cấu hình phân luồng an toàn - Nhận diện đa môi trường Sandbox/Live)
+ * Phiên bản: 3.7.0 (Xóa bỏ gác cổng Cooldown thời gian chờ trên Server RAM)
  */
 
 const { Telegraf, Markup } = require('telegraf');
@@ -36,8 +36,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 const SERVER_CONFIG = {
     MAX_DAILY_SPINS: 10,
     MAX_DAILY_ADS: 5,
-    SPIN_COOLDOWN_MS: 30 * 1000,
-    ADS_COOLDOWN_MS: 60 * 1000,
     MIN_VND_COINS_LIMIT: 2000000, 
     REFERRAL_REWARD_COINS: 50000  
 };
@@ -90,6 +88,7 @@ function syncUserInMemory(userId, userData) {
             lastAdsTimestamp: 0,
             dailySpinsCount: 0,
             dailyAdsCount: 0,
+            referralCount: 0, 
             lastActiveDate: todayStr
         });
     } else {
@@ -97,6 +96,10 @@ function syncUserInMemory(userId, userData) {
         existing.username = userData.username || existing.username;
         existing.first_name = userData.first_name || existing.first_name;
         
+        if (existing.referralCount === undefined) {
+            existing.referralCount = 0;
+        }
+
         if (existing.lastActiveDate !== todayStr) {
             existing.dailySpinsCount = 0;
             existing.dailyAdsCount = 0;
@@ -123,6 +126,7 @@ function loadRowsIntoDatabase(rows) {
                 lastAdsTimestamp: 0, 
                 dailySpinsCount: 0,
                 dailyAdsCount: Math.max(0, SERVER_CONFIG.MAX_DAILY_ADS - (parseInt(r['số lượng quảng cáo còn lại trong ngày']) ?? 5)),
+                referralCount: parseInt(r['Số người đã mời'] || r['Referrals']) || 0, 
                 lastActiveDate: todayStr
             });
             count++;
@@ -171,6 +175,7 @@ app.post('/api/update-assets', async (req, res) => {
             break;
         case 'watch_ads_success':
             if (user.dailyAdsCount >= SERVER_CONFIG.MAX_DAILY_ADS) return res.status(400).json({ error: "❌ Hết hạn mức xem Ads hôm nay!" });
+            // ĐÃ GỠ BỎ: Không kiểm tra khoảng cách thời gian giữa các lần xem Ads nữa
             user.coins += 12000; user.spinsLeft += 1; user.dailyAdsCount += 1; user.lastAdsTimestamp = now;
             break;
         case 'withdraw_request':
@@ -183,7 +188,7 @@ app.post('/api/update-assets', async (req, res) => {
     res.json(user);
 });
 
-// CỔNG WEBHOOK ĐỒNG BỘ TRẢ THƯỞNG DẠNG SẠCH userId
+// CỎNG WEBHOOK TIẾP NHÂN REWARD URL SẠCH TUYỆT ĐỐI KHÔNG COOLDOWN
 app.all('/api/user/update', async (req, res) => {
     const telegramId = req.query.userId || req.body.telegramId || req.query.telegramId || req.query['[userId]'];
     const action = req.query.action || req.body.action;
@@ -195,8 +200,9 @@ app.all('/api/user/update', async (req, res) => {
 
     if (action === 'watch_ads') {
         const now = Date.now();
+        // ĐÃ GỠ BỎ: Không chặn thời gian chờ Cooldown khi Adsgram gọi Webhook trả thưởng về
         user.coins += 12000; user.spinsLeft += 1; user.dailyAdsCount += 1; user.lastAdsTimestamp = now;
-        console.log(`[Webhook Adsgram Success] Đã trả thưởng +12k xu cho ID: ${telegramId}`);
+        console.log(`[Webhook Adsgram Success] Trả thưởng tự động liên tiếp thành công cho ID: ${telegramId}`);
     }
     res.json(user);
 });
@@ -212,8 +218,7 @@ app.get('/watch-ads', (req, res) => {
             <script>
                 document.addEventListener('DOMContentLoaded', () => {
                     if(window.Adsgram) {
-                        // Đồng bộ cổng test chạy link ngoài
-                        const AdController = window.Adsgram.createAdController('30379');
+                        const AdController = window.Adsgram.createAdController('30388');
                         AdController.show().then(async () => {
                             await fetch('/api/user/update?userId=${userId}&action=watch_ads');
                             alert("💎 Cộng tài sản thành công!");
@@ -229,13 +234,51 @@ app.get('/watch-ads', (req, res) => {
 async function triggerAutoBackup() {
     if (userDatabase.size === 0) return;
     const userList = Array.from(userDatabase.values());
-    const rows = userList.map(u => ({ 'ID telegram': u.id, 'Username': u.username, 'Tên': u.first_name, 'Lượt quay còn lại': u.spinsLeft, 'số Xu/coin': u.coins, 'số lượng quảng cáo còn lại trong ngày': Math.max(0, 5 - u.dailyAdsCount) }));
+    const rows = userList.map(u => ({ 
+        'ID telegram': u.id, 
+        'Username': u.username, 
+        'Tên': u.first_name, 
+        'Lượt quay còn lại': u.spinsLeft, 
+        'số Xu/coin': u.coins, 
+        'số lượng quảng cáo còn lại trong ngày': Math.max(0, 5 - u.dailyAdsCount),
+        'Số người đã mời': u.referralCount || 0 
+    }));
     XLSX.writeFile(XLSX.utils.book_append_sheet(XLSX.utils.book_new(), XLSX.utils.json_to_sheet(rows), 'Users'), EXCEL_FILE_PATH);
 }
 
 bot.start(async (ctx) => {
-    const user = syncUserInMemory(ctx.from.id, ctx.from);
-    return ctx.replyWithMarkdown(`👋 *Xin chào ${ctx.from.first_name}!* \nSố dư tài khoản: *${user.coins.toLocaleString()} Xu*`, Markup.inlineKeyboard([[Markup.button.webApp('🚀 Mở Ứng Dụng Kiếm Xu', MY_APP_LINK)]]));
+    const userId = ctx.from.id;
+    const startPayload = ctx.payload ? ctx.payload.trim() : (ctx.startPayload ? ctx.startPayload.trim() : ""); 
+    let isNewUser = !userDatabase.has(userId);
+
+    const user = syncUserInMemory(userId, ctx.from);
+
+    if (isNewUser && startPayload) {
+        const referrerId = parseInt(startPayload, 10);
+        if (!isNaN(referrerId) && referrerId !== userId && userDatabase.has(referrerId)) {
+            const inviter = userDatabase.get(referrerId);
+            
+            inviter.coins += SERVER_CONFIG.REFERRAL_REWARD_COINS;
+            inviter.referralCount = (inviter.referralCount || 0) + 1; 
+            userDatabase.set(referrerId, inviter);
+
+            try {
+                await bot.telegram.sendMessage(
+                    referrerId, 
+                    `🎉 *Hệ thống Giới Thiệu ghi nhận thành công!*\n` +
+                    `👤 Hội viên mới: [${ctx.from.first_name}](tg://user?id=${userId}) vừa tham gia qua link của bạn.\n` +
+                    `📊 Tổng số bạn bè đã mời: *${inviter.referralCount} người*\n` +
+                    `💎 Số dư tài khoản được cộng thưởng: *+${SERVER_CONFIG.REFERRAL_REWARD_COINS.toLocaleString()} Xu*!` ,
+                    { parse_mode: 'Markdown' }
+                );
+            } catch (e) {
+                console.error("Lỗi gửi tin nhắn thưởng tới người mời:", e.message);
+            }
+        }
+    }
+
+    const welcomeText = `👋 *Xin chào ${ctx.from.first_name}!* \nSố dư tài khoản: *${user.coins.toLocaleString()} Xu*`;
+    return ctx.replyWithMarkdown(welcomeText, Markup.inlineKeyboard([[Markup.button.webApp('🚀 Mở Ứng Dụng Kiếm Xu', MY_APP_LINK)]]));
 });
 
 bot.command('saoluu', async (ctx) => {
