@@ -2,7 +2,7 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Monolith Server Engine (Bot Control, RAM Storage, API Hosting & Anti-Sleep)
  * Năm vận hành: 2026
- * Phiên bản: 3.3.0 (Đồng nhất nhận diện tin nhắn Admin: /saoluu & /broadcast)
+ * Phiên bản: 3.2.0 (Khớp UnitID 30388 & Luồng xác thực tài khoản gốc an toàn)
  */
 
 const { Telegraf, Markup } = require('telegraf');
@@ -19,7 +19,6 @@ const fs = require('fs');
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_ID = parseInt(process.env.ADMIN_ID, 10);
 const MY_APP_LINK = process.env.MY_APP_LINK; 
-const ADSGRAM_BLOCK_ID = process.env.ADS_BLOCK_ID || process.env.ADSGRAM_BLOCK_ID || '30379'; // Đọc trực tiếp từ ENV Render
 
 if (!BOT_TOKEN || isNaN(ADMIN_ID) || !MY_APP_LINK) {
     console.error('❌ THIẾU CẤU HÌNH BIẾN MÔI TRƯỜNG (ENV)! Tiến trình khởi động server bị hủy.');
@@ -37,7 +36,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Cấu hình tham số giới hạn nguyên bản từ mã nguồn cũ
+// Cấu hình tham số giới hạn nguyên bản
 const SERVER_CONFIG = {
     MAX_DAILY_SPINS: 10,
     MAX_DAILY_ADS: 5,
@@ -74,7 +73,7 @@ function startSelfPingMechanism() {
 }
 
 // ==========================================
-// 3. IN-MEMORY DATABASE (GIỮ NGUYÊN HOÀN TOÀN CẤU TRÚC RAM GỐC)
+// 3. IN-MEMORY DATABASE (QUẢN LÝ DỮ LIỆU TRÊN RAM)
 // ==========================================
 let userDatabase = new Map();
 const BACKUP_INTERVAL = 5 * 60 * 1000; 
@@ -171,12 +170,10 @@ if (fs.existsSync(EXCEL_FILE_PATH)) {
 }
 
 // ==========================================
-// 4. ROUTE WEB API
+// 4. ROUTE WEB API (KẾT NỐI KHỚP TUYỆT ĐỐI GIAO DIỆN)
 // ==========================================
-app.get('/api/ads-config', (req, res) => {
-    res.json({ blockId: ADSGRAM_BLOCK_ID });
-});
 
+// Route đồng bộ thông tin tài khoản ban đầu dựa trên lớp bảo mật initData
 app.post('/api/user-data', (req, res) => {
     const { initData } = req.body;
     const tgUser = verifyTelegramWebAppData(initData);
@@ -184,6 +181,7 @@ app.post('/api/user-data', (req, res) => {
     res.json(syncUserInMemory(tgUser.id, tgUser));
 });
 
+// Route xử lý cập nhật tài sản cốt lõi từ các hoạt động trong Mini App
 app.post('/api/update-assets', async (req, res) => {
     const { initData, action, withdrawMethod, withdrawAddress, withdrawAmount } = req.body;
     const tgUser = verifyTelegramWebAppData(initData);
@@ -229,7 +227,7 @@ app.post('/api/update-assets', async (req, res) => {
             if (amount > user.coins) return res.status(400).json({ error: "❌ Số dư khả dụng trong tài khoản hiện tại không đủ!" });
 
             if ((withdrawMethod === 'momo' || withdrawMethod === 'bank') && amount < SERVER_CONFIG.MIN_VND_COINS_LIMIT) {
-                return res.status(400).json({ error: `❌ MoMo/Ngân hàng yêu cầu rút tối thiểu từ ${SERVER_CONFIG.MIN_VND_COINS_LIMIT.toLocaleString()} Xu!` });
+                return res.status(400).json({ error: `❌ Ngân hàng/MoMo yêu cầu rút tối thiểu từ ${SERVER_CONFIG.MIN_VND_COINS_LIMIT.toLocaleString()} Xu!` });
             }
 
             user.coins -= amount;
@@ -254,15 +252,21 @@ app.post('/api/update-assets', async (req, res) => {
     res.json(user);
 });
 
+// CỔNG WEBHOOK KHỚP REWARD URL ĐÃ CẤU HÌNH TRÊN DASHBOARD ADSGRAM
 app.all('/api/user/update', async (req, res) => {
-    const telegramId = req.query.userId || req.body.telegramId || req.query.telegramId || req.query['[userId]'] || req.query.user_id;
+    // Đón nhận tham số userId dạng Query Parameter sạch đồng nhất từ Adsgram Webhook
+    const telegramId = req.query.userId || req.body.telegramId || req.query.telegramId || req.query['[userId]'];
     const action = req.query.action || req.body.action;
 
-    if (!telegramId) return res.status(400).json({ error: "❌ Thao tác thất bại: Thiếu tham số định danh!" });
+    if (!telegramId) {
+        return res.status(400).json({ error: "❌ Thao tác thất bại: Thiếu tham số định danh userId trên URL!" });
+    }
     
     const uid = parseInt(telegramId, 10);
     const user = userDatabase.get(uid);
-    if (!user) return res.status(404).json({ error: "❌ Tài khoản người chơi chưa tồn tại!" });
+    if (!user) {
+        return res.status(404).json({ error: "❌ Tài khoản người chơi này chưa tồn tại trong bộ nhớ RAM!" });
+    }
 
     if (action === 'watch_ads') {
         const now = Date.now();
@@ -273,14 +277,16 @@ app.all('/api/user/update', async (req, res) => {
         user.spinsLeft += 1;      
         user.dailyAdsCount += 1;  
         user.lastAdsTimestamp = now;
+        
+        console.log(`[Adsgram Webhook Done] Ghi nhận +12,000 Xu thành công cho ID: ${uid}`);
     }
     res.json(user);
 });
 
-// Trang đệm kích hoạt Adsgram ngoài ứng dụng
+// Cổng trang đệm chạy luồng kích hoạt video Adsgram cho Link Nhiệm vụ ngoài
 app.get('/watch-ads', (req, res) => {
     const userId = req.query.userId;
-    if (!userId || isNaN(parseInt(userId, 10))) return res.status(400).send("<h3>❌ Cấu trúc URL sai định dạng!</h3>");
+    if (!userId || isNaN(parseInt(userId, 10))) return res.status(400).send("<h3>❌ Cấu trúc URL sai định dạng! Vui lòng dùng /watch-ads?userId=ID</h3>");
 
     res.send(`
         <!DOCTYPE html>
@@ -309,15 +315,19 @@ app.get('/watch-ads', (req, res) => {
             <script>
                 document.addEventListener('DOMContentLoaded', () => {
                     if (window.Adsgram) {
-                        const AdController = window.Adsgram.createAdController('${ADSGRAM_BLOCK_ID}');
+                        // ĐỒNG BỘ: Sử dụng UnitID 30388 thực tế của bạn
+                        const AdController = window.Adsgram.createAdController('30388');
                         AdController.show().then(async () => {
                             document.getElementById('status-text').innerText = "⏳ Đang ghi nhận phần thưởng lên RAM Server...";
-                            const response = await fetch('/api/user/update?userId=${userId}&action=watch_ads', { method: 'GET' });
+                            
+                            const response = await fetch('/api/user/update?userId=${userId}&action=watch_ads', {
+                                method: 'GET'
+                            });
                             if (response.ok) {
                                 document.getElementById('status-text').innerText = "🎉 THÀNH CÔNG!";
                                 alert("💎 Cộng +12,000 Xu thành công!");
                             } else {
-                                document.getElementById('status-text').innerText = "❌ Lỗi: Hệ thống từ chối.";
+                                document.getElementById('status-text').innerText = "❌ Lỗi: Hệ thống từ chối hoặc hết lượt xem.";
                             }
                         }).catch(() => {
                             document.getElementById('status-text').innerText = "❌ Lỗi tải quảng cáo.";
@@ -363,8 +373,6 @@ async function triggerAutoBackup() {
 // ==========================================
 // 6. CHỨC NĂNG ĐIỀU HÀNH BOT TELEGRAM (ADMIN CONTROL)
 // ==========================================
-
-// Middleware tối ưu chặn quyền & nhận diện chuẩn các câu lệnh của Admin
 function isAdminMiddleware(ctx, next) {
     if (ctx.from?.id === ADMIN_ID) return next();
     return ctx.reply('❌ Lệnh này chỉ dành riêng cho Ban Quản Trị.').catch(() => {});
@@ -409,7 +417,6 @@ bot.start(async (ctx) => {
     ])).catch(() => {});
 });
 
-// 🌟 ĐỒNG NHẤT 1: Nhận diện chuẩn xác lệnh /saoluu từ Admin để gửi file Excel
 bot.command('saoluu', isAdminMiddleware, async (ctx) => {
     try {
         const userList = Array.from(userDatabase.values());
@@ -438,34 +445,6 @@ bot.command('saoluu', isAdminMiddleware, async (ctx) => {
     }
 });
 
-// 🌟 ĐỒNG NHẤT 2: Nhận diện chuẩn xác lệnh /broadcast và bóc nội dung để gửi tin nhắn hàng loạt
-bot.command('broadcast', isAdminMiddleware, async (ctx) => {
-    try {
-        const msgText = ctx.payload ? ctx.payload.trim() : ""; // Tự động lấy toàn bộ nội dung tin nhắn sau dấu cách
-        if (!msgText) return ctx.reply('⚠️ Cú pháp đúng: `/broadcast [Nội dung tin nhắn cần gửi]`');
-
-        const userIds = Array.from(userDatabase.keys());
-        await ctx.reply(`📣 Đang tiến hành gửi thông báo tới toàn bộ ${userIds.length} người dùng...`);
-
-        let thanhCong = 0;
-        for (const id of userIds) {
-            try {
-                await ctx.telegram.sendMessage(id, `📢 *THÔNG BÁO TỪ HỆ THỐNG*\n\n${msgText}`, { parse_mode: 'Markdown' });
-                thanhCong++;
-                // Nghỉ ngắn 50ms giữa các lần gửi để không bị dính án phạt spam (Flood Rate Limit) của Telegram API
-                await new Promise(resolve => setTimeout(resolve, 50));
-            } catch (e) {
-                // Bỏ qua nếu người dùng đã block bot
-            }
-        }
-        await ctx.reply(`✅ Tiến trình broadcast hoàn tất!\n📊 Thành công: ${thanhCong}/${userIds.length}`);
-    } catch (err) {
-        console.error("Lỗi khi chạy broadcast:", err.message);
-        ctx.reply('❌ Có lỗi xảy ra trong quá trình broadcast thông báo!').catch(() => {});
-    }
-});
-
-// Nạp khôi phục database bằng cách kéo thả file .xlsx trực tiếp vào đoạn chat Admin
 bot.on('document', isAdminMiddleware, async (ctx) => {
     const doc = ctx.message.document;
     if (!doc.file_name.endsWith('.xlsx')) {
