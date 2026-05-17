@@ -2,7 +2,7 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Monolith Server Engine (Bot Control, RAM Storage, API Hosting & Anti-Sleep)
  * Năm vận hành: 2026
- * Phiên bản: 2.6.0 (Tối ưu hóa luồng bảo mật rút tiền và đồng bộ an toàn RAM)
+ * Phiên bản: 2.7.0 (Tích hợp cổng URL xử lý Adsgram trực tiếp qua tham số userId)
  */
 
 const { Telegraf, Markup } = require('telegraf');
@@ -119,7 +119,7 @@ function syncUserInMemory(userId, userData) {
         existing.username = userData.username || existing.username;
         existing.first_name = userData.first_name || existing.first_name;
         
-        // Cơ chế Auto-Reset toàn bộ hạn mức cày cuốc theo ngày dựa trên Server Time khi sang ngày mới
+        // Cơ chế Auto-Reset toàn bộ hạn mức cày cuốc theo ngày khi sang ngày mới
         if (existing.lastActiveDate !== todayStr) {
             existing.dailySpinsCount = 0;
             existing.dailyAdsCount = 0;
@@ -265,12 +265,112 @@ app.post('/api/update-assets', async (req, res) => {
     res.json(user);
 });
 
+// Tuyến đường phụ: Cập nhật tài sản bằng ID thô từ trang quảng cáo chuyển hướng phản hồi
+app.post('/api/user/update', async (req, res) => {
+    const { telegramId, action } = req.body;
+    const uid = parseInt(telegramId, 10);
+    const user = userDatabase.get(uid);
+    if (!user) return res.status(404).json({ error: "User không tồn tại!" });
+
+    if (action === 'watch_ads') {
+        const now = Date.now();
+        // Kiểm tra điều kiện Cooldown và hạn mức ngày an toàn ngay trên RAM Server
+        if (user.dailyAdsCount >= SERVER_CONFIG.MAX_DAILY_ADS) return res.status(400).json({ error: "Max Ads" });
+        if (now - user.lastAdsTimestamp < SERVER_CONFIG.ADS_COOLDOWN_MS) return res.status(400).json({ error: "Cooldown" });
+
+        user.coins += 12000;      // Cộng đúng 12,000 xu chuẩn logic
+        user.spinsLeft += 1;      // Tặng 1 lượt quay may mắn
+        user.dailyAdsCount += 1;  // Tích lũy hạn mức ngày
+        user.lastAdsTimestamp = now;
+    }
+    res.json(user);
+});
+
+// ==========================================
+// 5. CỔNG ĐÓN URL QUẢNG CÁO QUA USER_ID THEO YÊU CẦU
+// ==========================================
+app.get('/watch-ads', (req, res) => {
+    const userId = req.query.userId;
+    if (!userId || isNaN(parseInt(userId, 10))) {
+        return res.status(400).send("<h3>❌ Cấu trúc URL sai định dạng! Vui lòng sử dụng cấu trúc: /watch-ads?userId=[ID_Hội_Viên]</h3>");
+    }
+
+    // Trả về giao diện Webview động tự động kết nối Adsgram Live cho đúng UserID này
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="vi">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <title>Đang kết nối cổng Adsgram...</title>
+            <script src="https://telegram.org/js/telegram-web-app.js"></script>
+            <script src="https://sad.adsgram.ai/js/v1/adsgram-telegram-widget.js"></script>
+            <style>
+                body { background-color: #17212b; color: #f5f5f5; font-family: sans-serif; text-align: center; padding: 40px 20px; margin: 0; }
+                .loader { border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid #64b5f6; border-radius: 50%; width: 45px; height: 45px; animation: spin 1s linear infinite; margin: 25px auto; }
+                @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+                .card { background: #24303f; padding: 20px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+                h3 { margin-bottom: 10px; font-size: 1.1rem; color: #64b5f6; }
+                p { font-size: 0.9rem; color: #708499; line-height: 1.4; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <div class="loader"></div>
+                <h3 id="status-text">🔄 Đang tải luồng Video Adsgram...</h3>
+                <p>Hệ thống đang chuẩn bị kết nối cho Tài khoản ID: <b>${userId}</b>. Vui lòng xem hết 15 giây quảng cáo để nhận thưởng.</p>
+            </div>
+
+            <script>
+                document.addEventListener('DOMContentLoaded', () => {
+                    if (window.Adsgram) {
+                        // Khởi tạo luồng điều khiển với Block ID 30379
+                        const AdController = window.Adsgram.createAdController('30379');
+                        
+                        // Tự động kích hoạt hiển thị ngay khi trang tải xong
+                        AdController.show().then(async () => {
+                            document.getElementById('status-text').innerText = "⏳ Đang ghi nhận phần thưởng lên RAM Server...";
+                            
+                            // Gửi lệnh đồng bộ tài sản thông qua API ID thô bảo mật lên Server
+                            const response = await fetch('/api/user/update', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ telegramId: "${userId}", action: "watch_ads" })
+                            });
+
+                            if (response.ok) {
+                                document.getElementById('status-text').innerText = "🎉 THÀNH CÔNG!";
+                                document.getElementById('status-text').style.color = "#4caf50";
+                                alert("💎 Cộng +12,000 Xu & +1 Lượt quay thành công! Bạn có thể đóng cửa sổ này.");
+                            } else {
+                                const errData = await response.json().catch(() => ({}));
+                                document.getElementById('status-text').innerText = "❌ Lỗi: Hệ thống từ chối (Có thể do hết hạn mức hoặc chưa hết thời gian hồi chiêu).";
+                            }
+                        }).catch((err) => {
+                            if (err && err.done === false) {
+                                document.getElementById('status-text').innerText = "⚠️ Bạn đã tắt quảng cáo quá sớm! Thao tác bị hủy.";
+                                document.getElementById('status-text').style.color = "#ff9500";
+                            } else {
+                                document.getElementById('status-text').innerText = "❌ Lỗi: Kho quảng cáo hiện tại của đối tác đang hết.";
+                                document.getElementById('status-text').style.color = "#ff3b30";
+                            }
+                        });
+                    } else {
+                        document.getElementById('status-text').innerText = "❌ Không tìm thấy SDK Adsgram Widget. Hãy chạy trong Telegram.";
+                    }
+                });
+            </script>
+        </body>
+        </html>
+    `);
+});
+
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // ==========================================
-// 5. TIẾN TRÌNH TỰ ĐỘNG GHI SAO LƯU EXCEL ĐỊNH KỲ TĨNH
+// 6. TIẾN TRÌNH TỰ ĐỘNG GHI SAO LƯU EXCEL ĐỊNH KỲ TĨNH
 // ==========================================
 async function triggerAutoBackup() {
     if (userDatabase.size === 0) return;
@@ -300,7 +400,7 @@ async function triggerAutoBackup() {
 }
 
 // ==========================================
-// 6. CHỨC NĂNG ĐIỀU HÀNH BOT TELEGRAM (ADMIN CONTROL)
+// 7. CHỨC NĂNG ĐIỀU HÀNH BOT TELEGRAM (ADMIN CONTROL)
 // ==========================================
 function isAdminMiddleware(ctx, next) {
     if (ctx.from?.id === ADMIN_ID) return next();
@@ -351,7 +451,7 @@ bot.command('saoluu', isAdminMiddleware, async (ctx) => {
 });
 
 // ==========================================
-// 7. KHỞI CHẠY MÁY CHỦ NGUYÊN KHỐI MONOLITH
+// 8. KHỞI CHẠY MÁY CHỦ NGUYÊN KHỐI MONOLITH
 // ==========================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`[Hosting] Máy chủ đang mở tại cổng Port: ${PORT}`));
