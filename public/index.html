@@ -15,7 +15,7 @@
             <div class="user-profile">
                 <div class="avatar-placeholder" id="user-avatar">💰</div>
                 <div class="user-meta">
-                    <span id="username" class="username">Đang kết nối RAM...</span>
+                    <span id="username" class="username">Đang kết nối...</span>
                     <span class="user-badge">Thành viên VIP</span>
                 </div>
             </div>
@@ -61,7 +61,7 @@
                     </div>
 
                     <div class="wheel-actions">
-                        <button id="btn-spin" class="btn btn-primary btn-lg">🎡 QUAY NGAY</button>
+                        <button id="btn-spin" class="btn btn-primary btn-lg pulse">🎡 QUAY NGAY</button>
                         <div id="spin-cooldown" class="cooldown-notice hidden">⚡ Chờ hồi năng lượng: <span>30</span>s</div>
                     </div>
                 </div>
@@ -71,7 +71,7 @@
                         <h3>📺 Xem Ads Nhận Lượt Quay</h3>
                         <span id="daily-ads-count" class="ads-badge">0/5 hôm nay</span>
                     </div>
-                    <p class="ads-desc">Xem hết 15s quảng cáo từ đối tác Adsgram để nhận ngay +1 lượt quay may mắn vào RAM.</p>
+                    <p class="ads-desc">Xem hết 15s quảng cáo từ đối tác Adsgram để nhận ngay +12,000 Xu & +1 lượt quay may mắn vào RAM.</p>
                     <button id="btn-watch-ad" class="btn btn-secondary">▶ Xem Video Quảng Cáo</button>
                     <div id="ad-cooldown" class="cooldown-notice hidden">⏳ Thao tác quá nhanh! Chờ: <span>60</span>s</div>
                 </div>
@@ -101,6 +101,28 @@
                         <h2>💳 Tạo Lệnh Rút Tiền Mặt</h2>
                         <p class="rate-note">Tỷ giá cố định: 1.000 Xu = 1 VNĐ. Duyệt lệnh tự động qua Bot Telegram.</p>
                     </div>
+
+                    <table class="rates-table">
+                        <thead>
+                            <tr>
+                                <th>Hình thức</th>
+                                <th>Tỷ giá quy đổi</th>
+                                <th>Hạn mức tối thiểu</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><span class="badge bank">MoMo / BANK</span></td>
+                                <td>1,000 Xu = 1 VNĐ</td>
+                                <td class="highlight-coins">2,000,000 Xu (2,000đ)</td>
+                            </tr>
+                            <tr>
+                                <td><span class="badge ton-crypto">TON Crypto</span></td>
+                                <td>P2P Realtime</td>
+                                <td class="highlight-coins">Tự do tối thiểu</td>
+                            </tr>
+                        </tbody>
+                    </table>
 
                     <div class="form-container">
                         <div class="form-group">
@@ -152,13 +174,17 @@
     <script>
         document.querySelectorAll('.nav-item').forEach(button => {
             button.addEventListener('click', () => {
+                // Xóa trạng thái active trên toàn bộ menu
                 document.querySelectorAll('.nav-item').forEach(btn => btn.classList.remove('active'));
+                // Ẩn tất cả các nội dung phân đoạn tab
                 document.querySelectorAll('.app-tab-content').forEach(tab => tab.classList.add('hidden'));
                 
+                // Kích hoạt tab đích được click chọn
                 button.classList.add('active');
                 const targetTabId = button.getAttribute('data-target');
                 document.getElementById(targetTabId).classList.remove('hidden');
 
+                // Đồng bộ phản hồi xúc giác nhẹ khi click chuyển tab trên Mobile thiết bị
                 if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
                     window.Telegram.WebApp.HapticFeedback.impactOccurred('light');
                 }
