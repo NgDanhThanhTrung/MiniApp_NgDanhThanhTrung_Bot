@@ -2,7 +2,7 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Monolith Server Engine (Bot Control, RAM Storage, API Hosting & Anti-Sleep)
  * Năm vận hành: 2026
- * Phiên bản: 2.8.0 (Đồng bộ hóa cấu trúc xuất/nhập danh sách hội viên bằng file Excel)
+ * Phiên bản: 2.9.0 (Cấu hình hệ thống thưởng Referral 50,000 Xu khi mời hội viên mới)
  */
 
 const { Telegraf, Markup } = require('telegraf');
@@ -36,13 +36,14 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Cấu hình tham số giới hạn
+// Cấu hình tham số giới hạn hệ thống
 const SERVER_CONFIG = {
     MAX_DAILY_SPINS: 10,
     MAX_DAILY_ADS: 5,
     SPIN_COOLDOWN_MS: 30 * 1000,
     ADS_COOLDOWN_MS: 60 * 1000,
-    MIN_VND_COINS_LIMIT: 2000000 // Tối thiểu 2,000,000 Xu = 2,000 VNĐ cho MoMo/Bank
+    MIN_VND_COINS_LIMIT: 2000000, // Tối thiểu 2,000,000 Xu = 2,000 VNĐ cho MoMo/Bank
+    REFERRAL_REWARD_COINS: 50000  // 🔥 THƯỞNG MỜI BẠN BÈ: 50,000 XU
 };
 
 // ==========================================
@@ -126,19 +127,16 @@ function syncUserInMemory(userId, userData) {
     return userDatabase.get(userId);
 }
 
-// Hàm nạp phục hồi chung từ danh sách hàng của Excel (Dùng lúc boot server hoặc admin gửi file)
 function loadRowsIntoDatabase(rows) {
     let count = 0;
     const todayStr = new Date().toISOString().split('T')[0];
     
     rows.forEach(r => {
-        // Hỗ trợ nhận diện linh hoạt nhiều kiểu đặt tên cột của Admin
         const uid = parseInt(r['ID telegram'] || r['ID Telegram'] || r['ID Người Dùng'], 10);
         if (uid) {
             const coins = parseInt(r['số Xu/coin'] || r['Số Xu/coin'] || r['Số Dư Xu']) || 0;
             const spinsLeft = parseInt(r['Lượt quay còn lại'] || r['Lượt Quay Còn Lại'] || r['Lượt Quay'], 10) || 3;
             
-            // Tính ngược số lượng ad đã xem dựa vào số lượng quảng cáo còn lại trong ngày nhập vào
             const adsRemainingInput = parseInt(r['số lượng quảng cáo còn lại trong ngày'] || r['Số lượng quảng cáo còn lại trong ngày']) ?? SERVER_CONFIG.MAX_DAILY_ADS;
             const dailyAdsCount = Math.max(0, SERVER_CONFIG.MAX_DAILY_ADS - adsRemainingInput);
 
@@ -160,7 +158,6 @@ function loadRowsIntoDatabase(rows) {
     return count;
 }
 
-// Tự động khôi phục khi Reboot server
 if (fs.existsSync(EXCEL_FILE_PATH)) {
     try {
         const workbook = XLSX.readFile(EXCEL_FILE_PATH);
@@ -173,7 +170,7 @@ if (fs.existsSync(EXCEL_FILE_PATH)) {
 }
 
 // ==========================================
-// 4. ROUTE WEB API 
+// 4. ROUTE WEB API (KẾT NỐI KHỚP 100% VỚI APP.JS)
 // ==========================================
 app.post('/api/user-data', (req, res) => {
     const { initData } = req.body;
@@ -271,7 +268,6 @@ app.post('/api/user/update', async (req, res) => {
     res.json(user);
 });
 
-// Cổng điều hướng Adsgram theo UserId
 app.get('/watch-ads', (req, res) => {
     const userId = req.query.userId;
     if (!userId || isNaN(parseInt(userId, 10))) return res.status(400).send("<h3>❌ Cấu trúc URL sai định dạng!</h3>");
@@ -366,8 +362,45 @@ function isAdminMiddleware(ctx, next) {
     return ctx.reply('❌ Lệnh này chỉ dành riêng cho Ban Quản Trị.').catch(() => {});
 }
 
-bot.start((ctx) => {
-    const user = syncUserInMemory(ctx.from.id, ctx.from);
+// LẮNG NGHE LỆNH KHỞI ĐỘNG VÀ XỬ LÝ TRAO THƯỞNG GIỚI THIỆU 50.000 XU
+bot.start(async (ctx) => {
+    const userId = ctx.from.id;
+    const todayStr = new Date().toISOString().split('T')[0];
+    
+    // Kiểm tra xem user mới có click vào link chứa mã giới thiệu (?startapp=ID) hay không
+    const startPayload = ctx.startPayload; 
+    let isNewUser = !userDatabase.has(userId);
+
+    // Đồng bộ/Khởi tạo tài khoản người chơi mới hoặc cũ lên RAM
+    const user = syncUserInMemory(userId, ctx.from);
+
+    // Nếu là thành viên mới tinh và có mã người giới thiệu hợp lệ
+    if (isNewUser && startPayload && startPayload.startsWith('ref_')) {
+        const inviterId = parseInt(startPayload.replace('ref_', ''), 10);
+        
+        // Chặn tự mời chính mình và kiểm tra người mời có tồn tại trên RAM không
+        if (!isNaN(inviterId) && inviterId !== userId && userDatabase.has(inviterId)) {
+            const inviter = userDatabase.get(inviterId);
+            
+            // 🔥 Thực thi cộng chuẩn xác 50,000 xu vào tài sản người mời
+            inviter.coins += SERVER_CONFIG.REFERRAL_REWARD_COINS;
+            userDatabase.set(inviterId, inviter);
+
+            // Bắn tin nhắn trực tiếp báo hỷ cho người giới thiệu qua Bot
+            try {
+                await bot.telegram.sendMessage(
+                    inviterId, 
+                    `🎉 *Hệ thống Referral kích hoạt thành công!*\n` +
+                    `👤 Người bạn mời: [${ctx.from.first_name}](tg://user?id=${userId}) đã tham gia.\n` +
+                    `💎 Tài khoản của bạn được cộng thưởng: *+${SERVER_CONFIG.REFERRAL_REWARD_COINS.toLocaleString()} Xu*!` ,
+                    { parse_mode: 'Markdown' }
+                );
+            } catch (e) {
+                console.error("Lỗi gửi tin nhắn thưởng tới người mời:", e.message);
+            }
+        }
+    }
+
     const welcomeText = `👋 *Xin chào ${ctx.from.first_name}!* \n\n` +
                         `Chào mừng bạn đến với hệ thống *Siêu Cấp Kiếm Xu*.\n` +
                         `💰 Số dư: *${user.coins.toLocaleString()} Xu*\n` +
@@ -379,17 +412,15 @@ bot.start((ctx) => {
     ])).catch(() => {});
 });
 
-// LỆNH XUẤT FILE EXCEL THEO ĐÚNG YÊU CẦU CẤU TRÚC MỚI CỦA BẠN
 bot.command('saoluu', isAdminMiddleware, async (ctx) => {
     try {
         const userList = Array.from(userDatabase.values());
         if (userList.length === 0) return ctx.reply('⚠️ Cơ sở dữ liệu RAM hiện tại đang trống.');
 
-        // Chia bảng chính xác theo các cột bạn yêu cầu
         const rows = userList.map(u => ({
             'ID telegram': u.id, 
             'Username': u.username ? `@${u.username}` : 'Không có', 
-            'Tên': u.first_name, // Giữ thêm cột Tên để hiển thị trực quan
+            'Tên': u.first_name, 
             'Lượt quay còn lại': u.spinsLeft,
             'số Xu/coin': u.coins,
             'số lượng quảng cáo còn lại trong ngày': Math.max(0, SERVER_CONFIG.MAX_DAILY_ADS - u.dailyAdsCount)
@@ -409,32 +440,23 @@ bot.command('saoluu', isAdminMiddleware, async (ctx) => {
     }
 });
 
-// CHỨC NĂNG LẮNG NGHE FILE EXCEL DO ADMIN NÉM VÀO ĐỂ TỰ ĐỘNG KHÔI PHỤC DỮ LIỆU LÊN RAM
 bot.on('document', isAdminMiddleware, async (ctx) => {
     const doc = ctx.message.document;
-    
-    // Chỉ chấp nhận các file Excel định dạng .xlsx
     if (!doc.file_name.endsWith('.xlsx')) {
         return ctx.reply('⚠️ Định dạng file không hợp lệ! Vui lòng chỉ gửi file Excel có đuôi `.xlsx`.');
     }
 
     try {
         ctx.reply('🔄 Đang tiến hành đọc và phân tích file Excel dữ liệu...');
-        
-        // Lấy link tải file tạm thời từ máy chủ Telegram
         const fileLink = await bot.telegram.getFileLink(doc.file_id);
         const response = await fetch(fileLink.href);
         const arrayBuffer = await response.arrayBuffer();
         
-        // Đọc dữ liệu Excel trực tiếp từ bộ đệm mạng
         const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
         const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-        
-        // Đẩy toàn bộ danh sách hàng vào cơ sở dữ liệu RAM thông qua hàm xử lý thông minh
         const restoredCount = loadRowsIntoDatabase(rows);
 
         if (restoredCount > 0) {
-            // Đồng bộ ghi đè ngay lập tức một bản cứng dự phòng xuống đĩa container sau khi nạp thành công
             await triggerAutoBackup();
             return ctx.reply(`🎉 ĐỒNG BỘ THÀNH CÔNG!\n📊 Hệ thống đã nhận diện cấu trúc và nạp lại thành công dữ liệu của *${restoredCount}* tài khoản vào bộ nhớ RAM.`);
         } else {
@@ -447,7 +469,7 @@ bot.on('document', isAdminMiddleware, async (ctx) => {
 });
 
 // ==========================================
-// 7. KHỞI CHẠY MÁY CHỦ NGUYÊN KHỐI MONOLITH
+// 9. KHỞI CHẠY MÁY CHỦ NGUYÊN KHỐI MONOLITH
 // ==========================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`[Hosting] Máy chủ đang mở tại cổng Port: ${PORT}`));
