@@ -2,7 +2,7 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Monolith Server Engine (Bot Control, RAM Storage, API Hosting & Anti-Sleep)
  * Năm vận hành: 2026
- * Phiên bản: 3.1.0 (Đồng nhất hệ thống endpoint sạch userId - Khôi phục 100% logic core gốc)
+ * Phiên bản: 3.2.0 (Bảo mật: Đẩy hoàn toàn Adsgram Block ID qua biến môi trường ENV)
  */
 
 const { Telegraf, Markup } = require('telegraf');
@@ -19,6 +19,7 @@ const fs = require('fs');
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_ID = parseInt(process.env.ADMIN_ID, 10);
 const MY_APP_LINK = process.env.MY_APP_LINK; 
+const ADSGRAM_BLOCK_ID = process.env.ADS_BLOCK_ID || process.env.ADSGRAM_BLOCK_ID || '30379'; // 🌟 Đọc trực tiếp từ ENV Render
 
 if (!BOT_TOKEN || isNaN(ADMIN_ID) || !MY_APP_LINK) {
     console.error('❌ THIẾU CẤU HÌNH BIẾN MÔI TRƯỜNG (ENV)! Tiến trình khởi động server bị hủy.');
@@ -170,10 +171,14 @@ if (fs.existsSync(EXCEL_FILE_PATH)) {
 }
 
 // ==========================================
-// 4. ROUTE WEB API (KHÔI PHỤC ĐÚNG 100% ĐẦU NHẬN CODE CŨ)
+// 4. ROUTE WEB API
 // ==========================================
 
-// Tuyến đường gốc: Nhận diện và đồng bộ tài khoản thông qua dữ liệu bảo mật initData khi tải app
+// Cung cấp Block ID an toàn cho Frontend khi ứng dụng yêu cầu qua API kín
+app.get('/api/ads-config', (req, res) => {
+    res.json({ blockId: ADSGRAM_BLOCK_ID });
+});
+
 app.post('/api/user-data', (req, res) => {
     const { initData } = req.body;
     const tgUser = verifyTelegramWebAppData(initData);
@@ -181,7 +186,6 @@ app.post('/api/user-data', (req, res) => {
     res.json(syncUserInMemory(tgUser.id, tgUser));
 });
 
-// Tuyến đường gốc: Xử lý đóng băng biến động tài sản trực tiếp từ Mini App
 app.post('/api/update-assets', async (req, res) => {
     const { initData, action, withdrawMethod, withdrawAddress, withdrawAmount } = req.body;
     const tgUser = verifyTelegramWebAppData(initData);
@@ -252,21 +256,15 @@ app.post('/api/update-assets', async (req, res) => {
     res.json(user);
 });
 
-// CỔNG WEBHOOK TỐI ƯU MỚI: Tiếp nhận đồng bộ từ cổng xử lý URL (DẠNG SẠCH ĐÃ ĐỒNG NHẤT KHÔNG NGOẶC VUÔNG)
 app.all('/api/user/update', async (req, res) => {
-    // Đón nhận linh hoạt cả tham số dạng chuẩn, hoặc dạng macro ngoặc vuông gửi từ Adsgram Webhook
     const telegramId = req.query.userId || req.body.telegramId || req.query.telegramId || req.query['[userId]'] || req.query.user_id;
     const action = req.query.action || req.body.action;
 
-    if (!telegramId) {
-        return res.status(400).json({ error: "❌ Thao tác thất bại: Thiếu tham số định danh userId trên URL!" });
-    }
+    if (!telegramId) return res.status(400).json({ error: "❌ Thao tác thất bại: Thiếu tham số định danh!" });
     
     const uid = parseInt(telegramId, 10);
     const user = userDatabase.get(uid);
-    if (!user) {
-        return res.status(404).json({ error: "❌ Tài khoản người chơi này chưa tồn tại trong bộ nhớ RAM!" });
-    }
+    if (!user) return res.status(404).json({ error: "❌ Tài khoản người chơi chưa tồn tại!" });
 
     if (action === 'watch_ads') {
         const now = Date.now();
@@ -277,16 +275,14 @@ app.all('/api/user/update', async (req, res) => {
         user.spinsLeft += 1;      
         user.dailyAdsCount += 1;  
         user.lastAdsTimestamp = now;
-        
-        console.log(`[Adsgram Webhook Done] Ghi nhận +12,000 Xu thành công cho ID: ${uid}`);
     }
     res.json(user);
 });
 
-// Trang đệm kích hoạt Adsgram ngoài ứng dụng
+// Trang đệm kích hoạt Adsgram ngoài ứng dụng (Đã đồng bộ nhúng tự động Block ID từ ENV)
 app.get('/watch-ads', (req, res) => {
     const userId = req.query.userId;
-    if (!userId || isNaN(parseInt(userId, 10))) return res.status(400).send("<h3>❌ Cấu trúc URL sai định dạng! Vui lòng dùng /watch-ads?userId=ID</h3>");
+    if (!userId || isNaN(parseInt(userId, 10))) return res.status(400).send("<h3>❌ Cấu trúc URL sai định dạng!</h3>");
 
     res.send(`
         <!DOCTYPE html>
@@ -315,19 +311,16 @@ app.get('/watch-ads', (req, res) => {
             <script>
                 document.addEventListener('DOMContentLoaded', () => {
                     if (window.Adsgram) {
-                        const AdController = window.Adsgram.createAdController('30379');
+                        // 🌟 Tự động nạp mã sạch từ biến môi trường của Server bảo mật
+                        const AdController = window.Adsgram.createAdController('${ADSGRAM_BLOCK_ID}');
                         AdController.show().then(async () => {
                             document.getElementById('status-text').innerText = "⏳ Đang ghi nhận phần thưởng lên RAM Server...";
-                            
-                            // Gọi cổng API mới dạng sạch đồng bộ hoàn toàn
-                            const response = await fetch('/api/user/update?userId=${userId}&action=watch_ads', {
-                                method: 'GET'
-                            });
+                            const response = await fetch('/api/user/update?userId=${userId}&action=watch_ads', { method: 'GET' });
                             if (response.ok) {
                                 document.getElementById('status-text').innerText = "🎉 THÀNH CÔNG!";
                                 alert("💎 Cộng +12,000 Xu thành công!");
                             } else {
-                                document.getElementById('status-text').innerText = "❌ Lỗi: Hệ thống từ chối do trùng thời gian hồi chiêu.";
+                                document.getElementById('status-text').innerText = "❌ Lỗi: Hệ thống từ chối.";
                             }
                         }).catch(() => {
                             document.getElementById('status-text').innerText = "❌ Lỗi tải quảng cáo.";
