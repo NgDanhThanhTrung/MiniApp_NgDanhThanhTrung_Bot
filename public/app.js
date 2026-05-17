@@ -2,7 +2,7 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Frontend Logic API Engine (Chạy Nguyên Khối kết nối Realtime với RAM Server)
  * Năm vận hành: 2026
- * Phiên bản: 3.2.0 (Bảo mật: Tự động kéo mã Adsgram Block ID kín từ Server ENV)
+ * Phiên bản: 3.2.0 (Đồng bộ chuẩn UnitID 30388 & Khắc phục hoàn toàn lỗi nhảy cóc Ads)
  */
 
 const tg = window.Telegram ? window.Telegram.WebApp : null;
@@ -118,7 +118,7 @@ function updateUI() {
     const adsRemaining = Math.max(0, CONFIG.MAX_DAILY_ADS - serverUserState.dailyAdsCount);
     document.getElementById('txt-daily-ads').innerText = `${adsRemaining}/${CONFIG.MAX_DAILY_ADS}`;
 
-    // Link mời chuẩn dẫn thẳng vào Bot Telegram chính thức của bạn
+    // Link mời dẫn thẳng vào Bot Telegram chính thức kèm username chuẩn của bạn
     document.getElementById('referral-url').value = `https://t.me/SieuCapCayXu_NDTTrung_Bot?start=${serverUserState.id}`;
 }
 
@@ -182,10 +182,10 @@ document.getElementById('btn-spin').addEventListener('click', async () => {
     }, 4100);
 });
 
-// LOGIC XEM QUẢNG CÁO ADSGRAM (BẢO MẬT: ĐÃ ĐỒNG BỘ KÉO ID TỪ ENV BACKEND)
+// LOGIC XEM QUẢNG CÁO ADSGRAM THỰC TẾ (ĐÃ KHỚP UNITID 30388 CỦA BẠN)
 document.getElementById('btn-watch-ad').addEventListener('click', async () => {
     if (!window.Adsgram) {
-        showToast("❌ Lỗi: Không thể kết nối tới SDK Adsgram. Thử lại sau!");
+        showToast("❌ Lỗi: Không thể kết nối tới SDK Adsgram. Vui lòng tải lại trang!");
         return;
     }
 
@@ -205,21 +205,16 @@ document.getElementById('btn-watch-ad').addEventListener('click', async () => {
 
     const watchBtn = document.getElementById('btn-watch-ad');
     watchBtn.disabled = true;
-    showToast("🔄 Đang kết nối máy chủ quảng cáo an toàn...");
+    showToast("🔄 Đang kết nối luồng quảng cáo Adsgram...");
+
+    // ĐỒNG BỘ: Điền chính xác UnitID 30388 lấy từ Dashboard của bạn
+    const AdController = window.Adsgram.createAdController('30388');
 
     try {
-        // 🌟 Bước tiến độc bản: Gọi API lấy mã Block ID bảo mật từ ENV của Server
-        const configResponse = await fetch(`${BACKEND_API_URL}/api/ads-config`);
-        const configData = await configResponse.json();
-        const activeBlockId = configData.blockId || '30379';
-
-        // Khởi tạo luồng điều khiển Adsgram live bằng mã bọc an toàn
-        const AdController = window.Adsgram.createAdController(activeBlockId);
-        
-        // Ép xem xong quảng cáo 15 giây thực tế
+        // BƯỚC 1: Ép chạy hiển thị quảng cáo video trước
         await AdController.show();
         
-        // Chỉ khi xem xong thành công -> mới gửi lệnh cộng thưởng lên RAM Server
+        // BƯỚC 2: Chỉ khi xem hết 15s thành công trọn vẹn mới chạy xuống luồng cộng xu
         showToast("⏳ Đang đồng bộ phần thưởng lên RAM...");
         const ok = await postAssetUpdate('watch_ads_success');
         if (ok) {
@@ -231,7 +226,8 @@ document.getElementById('btn-watch-ad').addEventListener('click', async () => {
         if (error && error.done === false) {
             showToast("❌ Bạn đã tắt video quá sớm! Không nhận được thưởng.");
         } else {
-            showToast("⚠️ Không có video quảng cáo khả dụng hoặc lỗi cấu hình. Bạn KHÔNG được nhận xu!");
+            // Khi bạn bấm nút mà Adsgram chưa duyệt hoàn tất hoặc hết kho video, nó sẽ chặn lại tại đây và KHÔNG phát thưởng!
+            showToast("⚠️ Hiện tại không có video quảng cáo khả dụng hoặc hệ thống đang chờ duyệt. Bạn KHÔNG được nhận xu!");
         }
     } finally {
         watchBtn.disabled = false;
