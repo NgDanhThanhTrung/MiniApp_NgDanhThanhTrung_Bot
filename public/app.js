@@ -2,7 +2,7 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Frontend Logic API Engine (Chạy Nguyên Khối kết nối Realtime với RAM Server)
  * Năm vận hành: 2026
- * Phiên bản: 3.4.5 (Khắc phục lỗi nạp chậm Adsgram & Đồng bộ spinsLeft cứng)
+ * Phiên bản: 3.5.0 (Cấu hình Test Block ID 30379 - Sửa trực tiếp lỗi nạp Ads)
  */
 
 const tg = window.Telegram ? window.Telegram.WebApp : null;
@@ -22,7 +22,7 @@ const CONFIG = {
     MAX_DAILY_ADS: 5,       
 };
 
-// ĐỒNG BỘ 100%: Khởi tạo chính xác trường spinsLeft giống hệt bộ não Server RAM
+// Đồng bộ thuộc tính spinsLeft nhất quán với Server
 let serverUserState = {
     id: 0,
     coins: 0,
@@ -67,7 +67,6 @@ async function postAssetUpdate(actionName, extraPayload = {}) {
     try {
         const initDataRaw = tg ? tg.initData : "";
         
-        // Đóng gói cẩn thận cờ báo hiệu nếu đang chạy Sandbox test ngoài Telegram
         const requestBody = { 
             initData: initDataRaw, 
             action: actionName, 
@@ -103,7 +102,6 @@ function updateUI() {
     const vndEstimation = Math.floor(serverUserState.coins / CONFIG.COIN_TO_VND_RATE);
     document.getElementById('vnd-estimation').innerText = vndEstimation.toLocaleString();
 
-    // SỬA LỖI ĐỒNG BỘ: Điền chuẩn xác spinsLeft hiển thị lên thẻ tiến trình game
     document.getElementById('txt-spins-left').innerText = serverUserState.spinsLeft;
     document.getElementById('txt-daily-spins').innerText = `${serverUserState.dailySpinsCount}/${CONFIG.MAX_DAILY_SPINS}`;
     
@@ -133,7 +131,7 @@ function showToast(message) {
     }, 3000);
 }
 
-// CORES LOGIC VÒNG QUAY MAY MẮN
+// LOGIC VÒNG QUAY MAY MẮN
 document.getElementById('btn-spin').addEventListener('click', async () => {
     if (isWheelSpinning) return;
 
@@ -147,7 +145,7 @@ document.getElementById('btn-spin').addEventListener('click', async () => {
 
     if (serverUserState.spinsLeft <= 0) {
         triggerHaptic('error');
-        showToast("❌ Bạn đã hết lượt quay khả dụng! Hãy xem Ads để nạp thêm.");
+        showToast("❌ Bạn đã hết lượt quay khả dụng! Hãy xem Ads.");
         return;
     }
 
@@ -179,7 +177,7 @@ document.getElementById('btn-spin').addEventListener('click', async () => {
     }, 4100);
 });
 
-// LOGIC XEM QUẢNG CÁO ADSGRAM (ĐÃ FIX KHÓA LUỒNG SĂN LÙNG BIẾN WINDOW CHUẨN 100%)
+// LOGIC XEM QUẢNG CÁO ADSGRAM (SỬA TRỰC TIẾP KHỐI TEST CHẮC CHẮN HIỆN ADS)
 document.getElementById('btn-watch-ad').addEventListener('click', async () => {
     const now = Date.now();
     if (serverUserState.lastAdsTimestamp && (now - serverUserState.lastAdsTimestamp < CONFIG.ADS_COOLDOWN * 1000)) {
@@ -198,20 +196,22 @@ document.getElementById('btn-watch-ad').addEventListener('click', async () => {
     const watchBtn = document.getElementById('btn-watch-ad');
     watchBtn.disabled = true;
 
-    // GIẢI PHÁP THÔNG MINH: Nếu đang chạy trên Telegram thật (có initData), ép luồng đợi SDK nạp trong 1.5 giây nếu cần
+    // Ép luồng chờ nạp SDK nếu mạng Render/Telegram phản hồi chậm bất đồng bộ
     const isTelegramEnvironment = tg && tg.initData !== "";
     if (isTelegramEnvironment && !window.Adsgram) {
         showToast("⏳ Đang tối ưu hóa kết nối SDK Adsgram...");
         await new Promise(resolve => setTimeout(resolve, 1500));
     }
 
-    // LUỒNG CHẠY KIẾM TIỀN THẬT (Khi biến window đã sẵn sàng trên Telegram)
+    // LUỒNG KIẾM TIỀN THẬT / CHẠY DEMO TRÊN TELEGRAM CHÍNH THỨC
     if (window.Adsgram) {
         showToast("🔄 Đang kết nối luồng quảng cáo Adsgram...");
-        const AdController = window.Adsgram.createAdController('30388'); // Khớp mã Active chính chủ
+        
+        // SỬA TRỰC TIẾP Ở ĐÂY: Thay sang '30379' để luân chuyển video chạy thử nghiệm 100% hiện lên lập tức!
+        const AdController = window.Adsgram.createAdController('30379'); 
 
         try {
-            await AdController.show();
+            await AdController.show(); // Bật bảng video quảng cáo mẫu lên màn hình
             showToast("⏳ Đang đồng bộ phần thưởng lên RAM...");
             const ok = await postAssetUpdate('watch_ads_success');
             if (ok) {
@@ -229,7 +229,7 @@ document.getElementById('btn-watch-ad').addEventListener('click', async () => {
             watchBtn.disabled = false;
         }
     } 
-    // LUỒNG GIẢ LẬP AN TOÀN TRÊN TRÌNH DUYỆT NGOÀI CHỐNG SẬP 
+    // LUỒNG GIẢ LẬP AN TOÀN TRÊN TRÌNH DUYỆT WEB THƯỜNG (CHROME/SAFARI) NGOÀI TELEGRAM KHÔNG LO BỊ LỖI
     else {
         showToast("📡 Phát hiện chạy ngoài Telegram. Kích hoạt trình giả lập Adsgram 2s...");
         setTimeout(async () => {
