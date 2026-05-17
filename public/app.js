@@ -12,22 +12,22 @@ const BACKEND_API_URL = window.location.origin;
 
 if (tg) {
     tg.ready();
-    tg.expand(); 
-    if (tg.disableVerticalSwipes) tg.disableVerticalSwipes(); 
+    tg.expand(); // Kéo dãn ứng dụng tràn màn hình Mobile Webview
+    if (tg.disableVerticalSwipes) tg.disableVerticalSwipes(); // Khóa thao tác vuốt trượt lỡ đóng app
 }
 
 const CONFIG = {
-    COIN_TO_VND_RATE: 1000, 
-    SPIN_COOLDOWN: 30,      
-    ADS_COOLDOWN: 60,       
+    COIN_TO_VND_RATE: 1000, // Tỷ lệ quy đổi tài sản: 1 VNĐ = 1000 Xu
+    SPIN_COOLDOWN: 30,      // Thời gian chờ hồi chiêu vòng quay (giây)
+    ADS_COOLDOWN: 60,       // Thời gian chờ xem lượt quảng cáo kế tiếp (giây)
     MAX_DAILY_SPINS: 10,
     MAX_DAILY_ADS: 5,
 };
 
 let serverUserState = {
     id: 0,
-    coins: 50000,
-    spinsLeft: 3,
+    coins: 50000, // Mồi sẵn 50,000 Xu tài khoản trải nghiệm ban đầu
+    spinsLeft: 3,  // Mồi sẵn 3 lượt quay ban đầu tránh giật màn hình
     lastSpinTimestamp: 0,
     lastAdsTimestamp: 0,
     dailySpinsCount: 0,
@@ -35,7 +35,7 @@ let serverUserState = {
     referrerId: null
 };
 
-// 🌟 CẬP NHẬT: Mảng phần thưởng thuần Xu khớp chuẩn 100% với index.html và server.js
+// Mảng cấu trúc phần thưởng khớp chuẩn xác 100% với file index.html và server.js
 const WHEEL_REWARDS = [
     { text: "1,000 XU",  value: 1000 },
     { text: "5,000 XU",  value: 5000 },
@@ -47,37 +47,142 @@ const WHEEL_REWARDS = [
     { text: "50,000 XU", value: 50000 }
 ];
 
-let wheelRotation = 0; 
+let wheelRotation = 0; // Biến tích lũy góc quay vật lý
 let isSpinning = false;
 
+// ---- Hàm tiện ích hiển thị hộp thông báo nổi Toast ----
+function showToast(message) {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    container.innerText = message;
+    container.style.opacity = '1';
+    container.style.transform = 'translateX(-50%) translateY(-5px)';
+    
+    setTimeout(() => {
+        container.style.opacity = '0';
+        container.style.transform = 'translateX(-50%) translateY(0)';
+    }, 2800);
+}
+
+// ---- Phản hồi rung phần cứng điện thoại (Haptic Feedback) ----
 function triggerHaptic(type = 'light') {
     if (tg && tg.HapticFeedback) {
-        switch (type) {
-            case 'light': tg.HapticFeedback.impactOccurred('light'); break;
-            case 'medium': tg.HapticFeedback.impactOccurred('medium'); break;
-            case 'heavy': tg.HapticFeedback.impactOccurred('heavy'); break;
-            case 'success': tg.HapticFeedback.notificationOccurred('success'); break;
-            case 'error': tg.HapticFeedback.notificationOccurred('warning'); break;
-        }
+        if (type === 'success') tg.HapticFeedback.notificationOccurred('success');
+        else if (type === 'error') tg.HapticFeedback.notificationOccurred('error');
+        else tg.HapticFeedback.impactOccurred(type);
     }
 }
 
-function showToast(message) {
-    let toast = document.getElementById('toast-container');
-    if (!toast) return;
-    
-    toast.innerText = message;
-    toast.style.opacity = '1';
-    toast.style.transform = 'translateX(-50%) translateY(0)';
-    
-    setTimeout(() => {
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateX(-50%) translateY(8px)';
-    }, 3000);
+// ---- Định dạng hiển thị chuỗi số phân tách dấu phẩy ----
+function formatNumber(num) {
+    return Number(num).toLocaleString('vi-VN');
 }
 
 // ==========================================
-// 2. KẾT NỐI ĐỒNG BỘ DỮ LIỆU VỚI BACKEND SERVER
+// 2. RENDER VÀ ĐỒNG BỘ GIAO DIỆN NGƯỜI DÙNG (UI)
+// ==========================================
+function updateUI() {
+    // 1. Đồng bộ số dư Xu và VNĐ ước lượng trực quan công khai
+    if (document.getElementById('user-points')) {
+        document.getElementById('user-points').innerText = formatNumber(serverUserState.coins);
+    }
+    if (document.getElementById('vnd-estimation')) {
+        document.getElementById('vnd-estimation').innerText = formatNumber(Math.floor(serverUserState.coins / CONFIG.COIN_TO_VND_RATE));
+    }
+    
+    // 2. Cập nhật nhãn tên hiển thị người dùng
+    if (document.getElementById('username')) {
+        if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
+            const u = tg.initDataUnsafe.user;
+            document.getElementById('username').innerText = u.first_name + (u.last_name ? " " + u.last_name : "");
+        } else if (serverUserState.username) {
+            document.getElementById('username').innerText = `@${serverUserState.username}`;
+        } else {
+            document.getElementById('username').innerText = serverUserState.first_name || "Người chơi";
+        }
+    }
+
+    // 3. Cập nhật trạng thái hiển thị bên Tab Vòng Quay
+    if (document.getElementById('user-spins')) {
+        document.getElementById('user-spins').innerText = serverUserState.spinsLeft ?? 0;
+    }
+    if (document.getElementById('daily-spin-count')) {
+        document.getElementById('daily-spin-count').innerText = `${serverUserState.dailySpinsCount || 0}/${CONFIG.MAX_DAILY_SPINS}`;
+    }
+    if (document.getElementById('daily-ads-count')) {
+        document.getElementById('daily-ads-count').innerText = `${serverUserState.dailyAdsCount || 0}/${CONFIG.MAX_DAILY_ADS} hôm nay`;
+    }
+
+    // 4. Cập nhật Link mời bạn bè độc quyền tại Tab 2
+    if (document.getElementById('share-link')) {
+        let shareId = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) ? tg.initDataUnsafe.user.id : serverUserState.id;
+        document.getElementById('share-link').value = `https://t.me/SieuCapCayXu_NDTTrung_Bot/app?startapp=ref_${shareId}`;
+    }
+}
+
+// ==========================================
+// 3. BỘ ĐẾM GIÂY CHẠY NGẦM (COOLDOWN TIMER ENGINE)
+// ==========================================
+function runCooldownTimers() {
+    setInterval(() => {
+        const now = Date.now();
+
+        // 1. Quản lý đồng hồ trạng thái nút bấm Vòng quay
+        const btnSpin = document.getElementById('btn-spin');
+        const spinCooldownEl = document.getElementById('spin-cooldown');
+        
+        if (btnSpin && spinCooldownEl) {
+            if (!isSpinning) {
+                const spinTime = Math.floor((now - serverUserState.lastSpinTimestamp) / 1000);
+                
+                if (serverUserState.dailySpinsCount >= CONFIG.MAX_DAILY_SPINS) {
+                    btnSpin.innerText = `❌ HẾT HẠN MỨC NGÀY`;
+                    btnSpin.disabled = true;
+                    spinCooldownEl.classList.add('hidden');
+                } else if (spinTime < CONFIG.SPIN_COOLDOWN) {
+                    const remains = CONFIG.SPIN_COOLDOWN - spinTime;
+                    btnSpin.innerText = `⏳ ĐANG HỒI NĂNG LƯỢNG`;
+                    btnSpin.disabled = true;
+                    
+                    spinCooldownEl.classList.remove('hidden');
+                    spinCooldownEl.querySelector('span').innerText = remains;
+                } else {
+                    btnSpin.innerText = `🎡 QUAY NGAY`;
+                    btnSpin.disabled = (serverUserState.spinsLeft <= 0);
+                    spinCooldownEl.classList.add('hidden');
+                }
+            }
+        }
+
+        // 2. Quản lý đồng hồ trạng thái nút bấm Xem Video Ads
+        const btnAds = document.getElementById('btn-watch-ad');
+        const adCooldownEl = document.getElementById('ad-cooldown');
+        
+        if (btnAds && adCooldownEl) {
+            const adsTime = Math.floor((now - serverUserState.lastAdsTimestamp) / 1000);
+
+            if (serverUserState.dailyAdsCount >= CONFIG.MAX_DAILY_ADS) {
+                btnAds.innerText = `❌ ĐÃ HẾT LƯỢT XEM HÔM NAY`;
+                btnAds.disabled = true;
+                adCooldownEl.classList.add('hidden');
+            } else if (adsTime < CONFIG.ADS_COOLDOWN) {
+                const remains = CONFIG.ADS_COOLDOWN - adsTime;
+                btnAds.innerText = `⏳ CHỜ ADS: ${remains}s`;
+                btnAds.disabled = true;
+                
+                adCooldownEl.classList.remove('hidden');
+                adCooldownEl.querySelector('span').innerText = remains;
+            } else {
+                btnAds.innerText = `▶ Xem Video Quảng Cáo`;
+                btnAds.disabled = false;
+                adCooldownEl.classList.add('hidden');
+            }
+        }
+    }, 1000);
+}
+
+// ==========================================
+// 4. KẾT NỐI ĐỒNG BỘ DỮ LIỆU VỚI BACKEND SERVER
 // ==========================================
 async function fetchUserAccountData() {
     if (!tg || !tg.initData) return;
@@ -120,102 +225,6 @@ async function postAssetUpdate(actionType, extraParams = {}) {
 }
 
 // ==========================================
-// 3. RENDER VÀ ĐỒNG BỘ GIAO DIỆN NGƯỜI DÙNG (UI)
-// ==========================================
-function updateUI() {
-    let usernameDisplay = "Thành viên TMA";
-    if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
-        const u = tg.initDataUnsafe.user;
-        usernameDisplay = u.first_name + (u.last_name ? " " + u.last_name : "");
-        
-        if (u.id && document.getElementById('share-link')) {
-            document.getElementById('share-link').value = `https://t.me/SieuCapCayXu_NDTTrung_Bot/app?startapp=ref_${u.id}`;
-        }
-    }
-    if (document.getElementById('username')) {
-        document.getElementById('username').innerText = usernameDisplay;
-    }
-
-    const coins = serverUserState.coins || 0;
-    if (document.getElementById('user-points')) {
-        document.getElementById('user-points').innerText = coins.toLocaleString('en-US');
-    }
-    
-    if (document.getElementById('vnd-estimation')) {
-        const vndEstimation = Math.floor(coins / CONFIG.COIN_TO_VND_RATE);
-        document.getElementById('vnd-estimation').innerText = vndEstimation.toLocaleString('vi-VN');
-    }
-
-    if (document.getElementById('user-spins')) {
-        document.getElementById('user-spins').innerText = serverUserState.spinsLeft ?? 0;
-    }
-    if (document.getElementById('daily-spin-count')) {
-        document.getElementById('daily-spin-count').innerText = `${serverUserState.dailySpinsCount || 0}/${CONFIG.MAX_DAILY_SPINS}`;
-    }
-    if (document.getElementById('daily-ads-count')) {
-        document.getElementById('daily-ads-count').innerText = `${serverUserState.dailyAdsCount || 0}/${CONFIG.MAX_DAILY_ADS} hôm nay`;
-    }
-}
-
-// ==========================================
-// 4. BỘ ĐẾM GIÂY CHẠY NGẦM (COOLDOWN TIMER ENGINE)
-// ==========================================
-function runCooldownTimers() {
-    setInterval(() => {
-        const now = Date.now();
-        const btnSpin = document.getElementById('btn-spin');
-        const spinCooldownEl = document.getElementById('spin-cooldown');
-        
-        if (btnSpin && spinCooldownEl) {
-            if (!isSpinning) {
-                const spinTime = Math.floor((now - serverUserState.lastSpinTimestamp) / 1000);
-                
-                if (serverUserState.dailySpinsCount >= CONFIG.MAX_DAILY_SPINS) {
-                    btnSpin.innerText = `❌ HẾT HẠN MỨC NGÀY`;
-                    btnSpin.disabled = true;
-                    spinCooldownEl.classList.add('hidden');
-                } else if (spinTime < CONFIG.SPIN_COOLDOWN) {
-                    const remains = CONFIG.SPIN_COOLDOWN - spinTime;
-                    btnSpin.innerText = `⏳ ĐANG HỒI NĂNG LƯỢNG`;
-                    btnSpin.disabled = true;
-                    
-                    spinCooldownEl.classList.remove('hidden');
-                    spinCooldownEl.querySelector('span').innerText = remains;
-                } else {
-                    btnSpin.innerText = `🎡 QUAY NGAY`;
-                    btnSpin.disabled = false;
-                    spinCooldownEl.classList.add('hidden');
-                }
-            }
-        }
-
-        const btnAds = document.getElementById('btn-watch-ad');
-        const adCooldownEl = document.getElementById('ad-cooldown');
-        
-        if (btnAds && adCooldownEl) {
-            const adsTime = Math.floor((now - serverUserState.lastAdsTimestamp) / 1000);
-
-            if (serverUserState.dailyAdsCount >= CONFIG.MAX_DAILY_ADS) {
-                btnAds.innerText = `❌ ĐÃ HẾT LƯỢT XEM HÔM NAY`;
-                btnAds.disabled = true;
-                adCooldownEl.classList.add('hidden');
-            } else if (adsTime < CONFIG.ADS_COOLDOWN) {
-                const remains = CONFIG.ADS_COOLDOWN - adsTime;
-                btnAds.innerText = `⏳ CHỜ ADS: ${remains}s`;
-                btnAds.disabled = true;
-                
-                adCooldownEl.classList.remove('hidden');
-                adCooldownEl.querySelector('span').innerText = remains;
-            } else {
-                btnAds.innerText = `▶ Xem Video Quảng Cáo`;
-                btnAds.disabled = false;
-                adCooldownEl.classList.add('hidden');
-            }
-        }
-    }, 1000);
-}
-
-// ==========================================
 // 5. MÔ PHỎNG VẬT LÝ VÒNG QUAY MAY MẮN
 // ==========================================
 async function handleLuckyWheel() {
@@ -242,13 +251,14 @@ async function handleLuckyWheel() {
     document.getElementById('btn-spin').disabled = true;
     triggerHaptic('heavy');
 
+    // Khóa trừ lượt và ghi nhận mốc thời gian an toàn ngầm từ xa trên RAM
     const lockSuccess = await postAssetUpdate('spin_start');
     if (!lockSuccess) { isSpinning = false; return; }
 
-    // Xử lý logic bốc thưởng đồng bộ ngẫu nhiên
+    // Xử lý góc quay ngẫu nhiên tập trung khớp nhãn cung đồ họa CSS
     const targetIndex = Math.floor(Math.random() * 8);
     const degreesPerSegment = 360 / 8;
-    const extraRounds = 5 * 360; 
+    const extraRounds = 5 * 360; // Quay gia tốc tít mắt 5 vòng lớn tạo độ kịch tính
     
     wheelRotation += extraRounds + (360 - (targetIndex * degreesPerSegment)) - (wheelRotation % 360);
 
@@ -257,11 +267,12 @@ async function handleLuckyWheel() {
         wheel.style.transform = `rotate(${wheelRotation}deg)`;
     }
 
+    // Đợi hiệu ứng CSS transition hoàn tất trong 4 giây tĩnh
     setTimeout(async () => {
         isSpinning = false;
         const prize = WHEEL_REWARDS[targetIndex];
         
-        // Gửi lệnh cộng số tiền thực lĩnh lên RAM Server
+        // Đẩy đơn cập nhật cộng Xu thực lĩnh lên bộ nhớ RAM Server
         await postAssetUpdate('spin_reward', { rewardCoins: prize.value });
         triggerHaptic('success');
         showToast(`🎉 Tuyệt vời! Bạn đã quay trúng +${prize.value.toLocaleString()} Xu!`);
@@ -269,7 +280,7 @@ async function handleLuckyWheel() {
 }
 
 // ==========================================
-// 6. TÍCH HỢP SDK ADSGRAM & NHẬN LƯỢT QUAY
+// 6. TÍCH HỢP SDK ADSGRAM LIVE & NHẬN LƯỢT QUAY
 // ==========================================
 function handleWatchAds() {
     if (serverUserState.dailyAdsCount >= CONFIG.MAX_DAILY_ADS) {
@@ -287,10 +298,12 @@ function handleWatchAds() {
     triggerHaptic('light');
 
     if (window.Adsgram) {
-        const AdController = window.Adsgram.createAdController('YOUR_BLOCK_ID');
+        // 🌟 CẤU HÌNH LIVE: Đã tích hợp Block ID thực tế 30379 của bạn
+        const AdController = window.Adsgram.createAdController('30379');
         showToast("🔄 Đang kết nối luồng AdsGram...");
         
         AdController.show().then(async () => {
+            // Trình phát Video chạy hoàn thành trọn vẹn 15 giây thành công
             const ok = await postAssetUpdate('watch_ads_success');
             if (ok) {
                 triggerHaptic('success');
@@ -298,9 +311,14 @@ function handleWatchAds() {
             }
         }).catch((err) => {
             triggerHaptic('error');
-            showToast("❌ Lỗi đường truyền tải Video AdsGram hoặc tắt ads sớm.");
+            if (err && err.done === false) {
+                showToast("⚠️ Bạn đã tắt video quá sớm! Không được nhận thưởng.");
+            } else {
+                showToast("❌ Lỗi đường truyền tải Video AdsGram.");
+            }
         });
     } else {
+        // Khối Sandbox dự phòng giả lập chạy thử trên môi trường duyệt Local Web thông thường
         showToast("📺 Chế độ Sandbox: Xem Ads thành công! (+1 Lượt)");
         setTimeout(async () => {
             await postAssetUpdate('watch_ads_success');
@@ -310,12 +328,16 @@ function handleWatchAds() {
 }
 
 // ==========================================
-// 7. INITIALIZER ENTRY POINT
+// 7. INITIALIZER ENTRY POINT (RÀNG BUỘC SỰ KIỆN)
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
+    // 1. Kéo dữ liệu lưu từ RAM server về đồng bộ giao diện tĩnh mồi sẵn
     fetchUserAccountData();
+    
+    // 2. Kích hoạt luồng chạy ngầm tính toán Cooldown từng giây liên tục
     runCooldownTimers();
 
+    // Ràng buộc các sự kiện điều hành click chức năng chính
     if (document.getElementById('btn-spin')) {
         document.getElementById('btn-spin').addEventListener('click', handleLuckyWheel);
     }
@@ -323,6 +345,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('btn-watch-ad').addEventListener('click', handleWatchAds);
     }
 
+    // 3. Xử lý sao chép link mời nhanh ở Tab 2
     if (document.getElementById('btn-copy-link')) {
         document.getElementById('btn-copy-link').addEventListener('click', () => {
             triggerHaptic('light');
@@ -336,11 +359,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // 4. Xử lý sự kiện click gửi link chia sẻ mời bạn bè tại Tab 2
     if (document.getElementById('btn-share-tg')) {
         document.getElementById('btn-share-tg').addEventListener('click', () => {
             triggerHaptic('light');
             const shareUrl = document.getElementById('share-link').value;
-            const textInvite = encodeURIComponent("🔥 Vào cày xu đổi tiền mặt cực dễ trên Telegram! Rút tiền uy tín cực kỳ luôn 👇");
+            const textInvite = encodeURIComponent("🔥 Vào cày xu đổi tiền mặt và TON với mình cực dễ trên Telegram! Rút tiền uy tín cực kỳ luôn 👇");
             const telegramShareLink = `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${textInvite}`;
             
             if (tg && tg.openTelegramLink) {
@@ -351,6 +375,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // 5. Xử lý nộp đơn gửi lệnh tạo yêu cầu rút tiền mặt/TON phân luồng logic mới
     if (document.getElementById('btn-submit-withdraw')) {
         document.getElementById('btn-submit-withdraw').addEventListener('click', async () => {
             const method = document.getElementById('withdraw-method').value;
@@ -376,6 +401,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            // Gửi lệnh tạo đơn an toàn lên bộ não Server RAM duyệt
             const ok = await postAssetUpdate('withdraw_request', { 
                 withdrawMethod: method, 
                 withdrawAddress: address, 
