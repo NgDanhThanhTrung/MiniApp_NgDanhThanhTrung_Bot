@@ -15,138 +15,91 @@
             <div class="user-profile">
                 <div class="avatar-placeholder" id="user-avatar">💰</div>
                 <div class="user-meta">
-                    <span id="username" class="username">Đang kết nối...</span>
+                    <span id="username" class="username">Đang kết nối RAM...</span>
                     <span class="user-badge">Thành viên VIP</span>
                 </div>
             </div>
             <div class="balance-card">
                 <p class="balance-label">TỔNG SỐ DƯ XU</p>
                 <div class="balance-amount">
-                    <span id="user-points">50,000</span>
+                    <span id="user-points">0</span>
                     <span class="coin-ticker">COINS</span>
                 </div>
-                <p class="balance-estimation">~ <span id="vnd-estimation">50</span> VNĐ</p>
+                <p class="balance-estimation">~ <span id="vnd-estimation">0</span> VNĐ</p>
             </div>
         </header>
 
         <main class="content-body">
             
             <section id="tab-wheel" class="app-tab-content">
-                <div class="wheel-section">
-                    <div class="wheel-stats">
-                        <div class="stat-box">
-                            <span class="stat-label">Lượt quay còn:</span>
-                            <span id="user-spins" class="stat-value highlight">3</span>
-                        </div>
-                        <div class="stat-box">
-                            <span class="stat-label">Hôm nay đã quay:</span>
-                            <span id="daily-spin-count" class="stat-value">0/10</span>
-                        </div>
+                <div class="wheel-container">
+                    <div class="wheel-pointer">👇</div>
+                    <div id="lucky-wheel" class="wheel-canvas">
+                        <div class="wheel-segment" style="transform: rotate(0deg);"><span class="seg-txt">10,000</span></div>
+                        <div class="wheel-segment" style="transform: rotate(45deg);"><span class="seg-txt">200</span></div>
+                        <div class="wheel-segment" style="transform: rotate(90deg);"><span class="seg-txt">5,000</span></div>
+                        <div class="wheel-segment" style="transform: rotate(135deg);"><span class="seg-txt">1,000</span></div>
+                        <div class="wheel-segment" style="transform: rotate(180deg);"><span class="seg-txt">50,000</span></div>
+                        <div class="wheel-segment" style="transform: rotate(225deg);"><span class="seg-txt">2,000</span></div>
+                        <div class="wheel-segment" style="transform: rotate(270deg);"><span class="seg-txt">20,000</span></div>
+                        <div class="wheel-segment" style="transform: rotate(315deg);"><span class="seg-txt">500</span></div>
                     </div>
-
-                    <div class="wheel-container">
-                        <div class="wheel-pointer">▼</div>
-                        <div id="wheel-wrapper">
-                            <div id="wheel" class="wheel-element">
-                                <div class="wheel-segment" style="--i:1; --clr:#ff4757;"><span>1,000 XU</span></div>
-                                <div class="wheel-segment" style="--i:2; --clr:#2ed573;"><span>5,000 XU</span></div>
-                                <div class="wheel-segment" style="--i:3; --clr:#1e90ff;"><span>200 XU</span></div>
-                                <div class="wheel-segment" style="--i:4; --clr:#ffa500;"><span>10,000 XU</span></div>
-                                <div class="wheel-segment" style="--i:5; --clr:#9b59b6;"><span>500 XU</span></div>
-                                <div class="wheel-segment" style="--i:6; --clr:#34495e;"><span>2,000 XU</span></div>
-                                <div class="wheel-segment" style="--i:7; --clr:#e74c3c;"><span>20,000 XU</span></div>
-                                <div class="wheel-segment" style="--i:8; --clr:#1abc9c;"><span>50,000 XU</span></div>
-                            </div>
-                        </div>
+                    <button id="btn-spin" class="btn-primary-action">🎡 QUAY NGAY</button>
+                </div>
+                
+                <div class="status-dashboard">
+                    <div class="stat-box">
+                        <span class="stat-label">Lượt quay còn lại</span>
+                        <span id="txt-spins-left" class="stat-value">0</span>
                     </div>
-
-                    <div class="wheel-actions">
-                        <button id="btn-spin" class="btn btn-primary btn-lg pulse">🎡 QUAY NGAY</button>
-                        <div id="spin-cooldown" class="cooldown-notice hidden">⚡ Chờ hồi năng lượng: <span>30</span>s</div>
+                    <div class="stat-box">
+                        <span class="stat-label">Hạn mức quay hôm nay</span>
+                        <span id="txt-daily-spins" class="stat-value">0/10</span>
                     </div>
                 </div>
 
-                <div class="ads-section">
-                    <div class="ads-header">
-                        <h3>📺 Xem Ads Nhận Lượt Quay</h3>
-                        <span id="daily-ads-count" class="ads-badge">0/5 hôm nay</span>
-                    </div>
-                    <p class="ads-desc">Xem hết 15s quảng cáo từ đối tác Adsgram để nhận ngay +12,000 Xu & +1 lượt quay may mắn vào RAM.</p>
-                    <button id="btn-watch-ad" class="btn btn-secondary">▶ Xem Video Quảng Cáo</button>
-                    <div id="ad-cooldown" class="cooldown-notice hidden">⏳ Thao tác quá nhanh! Chờ: <span>60</span>s</div>
+                <div class="ad-trigger-zone">
+                    <button id="btn-watch-ad" class="btn-secondary-action">▶ Xem Video Quảng Cáo (+12,000 Xu +1 Lượt)</button>
+                    <p class="ad-hint">Hạn mức xem quảng cáo hôm nay còn lại: <span id="txt-daily-ads">5/5</span> lượt</p>
                 </div>
             </section>
 
             <section id="tab-invite" class="app-tab-content hidden">
-                <div class="invite-card">
-                    <div class="invite-icon">🎁</div>
-                    <h2>Mời Bạn Bè - Nhận Xu Khủng</h2>
-                    <p class="invite-bonus">+10,000 COINS cho mỗi người bạn tham gia qua link của bạn!</p>
-                    
+                <div class="feature-card">
+                    <h2>👥 Mời Bạn Nhận Quà Khủng</h2>
+                    <p>Copy đường link độc quyền bên dưới gửi cho bạn bè qua chat Telegram để gia tăng tốc độ tích lũy khối tài sản Xu khổng lồ!</p>
                     <div class="referral-box">
-                        <p class="ref-label">ĐƯỜNG DẪN GIỚI THIỆU CỦA BẠN:</p>
-                        <div class="link-input-group">
-                            <input type="text" id="share-link" readonly value="Đang tạo mã giới thiệu...">
-                            <button id="btn-copy-link" class="btn btn-small">Sao Chép</button>
-                        </div>
+                        <input type="text" id="referral-url" readonly value="Đang tải link...">
+                        <button id="btn-copy-ref" class="btn-small">Sao Chép</button>
                     </div>
-
-                    <button id="btn-share-tg" class="btn btn-primary btn-block">🚀 Gửi Trực Tiếp Vào Tin Nhắn Telegram</button>
                 </div>
             </section>
 
             <section id="tab-withdraw" class="app-tab-content hidden">
-                <div class="withdraw-card">
-                    <div class="withdraw-header">
-                        <h2>💳 Tạo Lệnh Rút Tiền Mặt</h2>
-                        <p class="rate-note">Tỷ giá cố định: 1.000 Xu = 1 VNĐ. Duyệt lệnh tự động qua Bot Telegram.</p>
+                <div class="feature-card">
+                    <h2>💳 Đổi Thưởng & Rút Tiền Mặt</h2>
+                    <p class="alert-box-info">⚠️ Hạn mức rút tối thiểu cho MoMo/Ngân hàng: <b>2,000,000 Xu (= 2,000 VNĐ)</b>. Hệ thống TON Network được tự do quy đổi ngầm.</p>
+                    
+                    <div class="form-group">
+                        <label for="withdraw-method">Chọn phương thức:</label>
+                        <select id="withdraw-method">
+                            <option value="momo">Ví Điện Tử MoMo</option>
+                            <option value="bank">Ngân Hàng Nội Địa (Vietcombank/MB...)</option>
+                            <option value="ton">Mạng Lưới Tiền Số TON Network (Crypto)</option>
+                        </select>
                     </div>
 
-                    <table class="rates-table">
-                        <thead>
-                            <tr>
-                                <th>Hình thức</th>
-                                <th>Tỷ giá quy đổi</th>
-                                <th>Hạn mức tối thiểu</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><span class="badge bank">MoMo / BANK</span></td>
-                                <td>1,000 Xu = 1 VNĐ</td>
-                                <td class="highlight-coins">2,000,000 Xu (2,000đ)</td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge ton-crypto">TON Crypto</span></td>
-                                <td>P2P Realtime</td>
-                                <td class="highlight-coins">Tự do tối thiểu</td>
-                            </tr>
-                        </tbody>
-                    </table>
-
-                    <div class="form-container">
-                        <div class="form-group">
-                            <label for="withdraw-method">Hình thức nhận tiền:</label>
-                            <select id="withdraw-method" class="form-control">
-                                <option value="momo">Ví Điện Tử MoMo (Min 2.000đ)</option>
-                                <option value="bank">Chuyển Khoản Ngân Hàng (Min 2.000đ)</option>
-                                <option value="ton">Mạng Lưới Ví TON Crypto</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="withdraw-address">Thông tin tài khoản nhận:</label>
-                            <input type="text" id="withdraw-address" class="form-control" placeholder="Số điện thoại Momo / Số tài khoản + Tên ngân hàng">
-                        </div>
-
-                        <div class="form-group">
-                            <label for="withdraw-amount">Số Xu muốn rút (COINS):</label>
-                            <input type="number" inputmode="numeric" id="withdraw-amount" class="form-control" placeholder="Ví dụ: 2000000">
-                            <span class="input-hint">Rút MoMo/Bank tối thiểu là 2,000,000 Xu (tương đương 2,000đ).</span>
-                        </div>
-
-                        <button id="btn-submit-withdraw" class="btn btn-success btn-block">🚀 Gửi Đơn Đẩy Lên Hệ Thống Duyệt</button>
+                    <div class="form-group">
+                        <label id="lbl-address" for="withdraw-address">Số điện thoại Ví MoMo:</label>
+                        <input type="text" id="withdraw-address" placeholder="Ví dụ: 0987654321">
                     </div>
+
+                    <div class="form-group">
+                        <label for="withdraw-amount">Số lượng Xu muốn rút:</label>
+                        <input type="number" id="withdraw-amount" placeholder="Nhập số xu tối thiểu 2,000,000">
+                    </div>
+
+                    <button id="btn-submit-withdraw" class="btn-primary-action" style="background: #e57373;">🚀 TẠO LỆNH RÚT TIỀN</button>
                 </div>
             </section>
 
@@ -174,17 +127,13 @@
     <script>
         document.querySelectorAll('.nav-item').forEach(button => {
             button.addEventListener('click', () => {
-                // Xóa trạng thái active trên toàn bộ menu
                 document.querySelectorAll('.nav-item').forEach(btn => btn.classList.remove('active'));
-                // Ẩn tất cả các nội dung phân đoạn tab
                 document.querySelectorAll('.app-tab-content').forEach(tab => tab.classList.add('hidden'));
                 
-                // Kích hoạt tab đích được click chọn
                 button.classList.add('active');
                 const targetTabId = button.getAttribute('data-target');
                 document.getElementById(targetTabId).classList.remove('hidden');
 
-                // Đồng bộ phản hồi xúc giác nhẹ khi click chuyển tab trên Mobile thiết bị
                 if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
                     window.Telegram.WebApp.HapticFeedback.impactOccurred('light');
                 }
