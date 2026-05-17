@@ -2,7 +2,7 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Monolith Server Engine (Bot Control, RAM Storage, API Hosting & Anti-Sleep)
  * Năm vận hành: 2026
- * Phiên bản: 3.2.0 (Bảo mật: Đẩy hoàn toàn Adsgram Block ID qua biến môi trường ENV)
+ * Phiên bản: 3.3.0 (Đồng nhất nhận diện tin nhắn Admin: /saoluu & /broadcast)
  */
 
 const { Telegraf, Markup } = require('telegraf');
@@ -19,7 +19,7 @@ const fs = require('fs');
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_ID = parseInt(process.env.ADMIN_ID, 10);
 const MY_APP_LINK = process.env.MY_APP_LINK; 
-const ADSGRAM_BLOCK_ID = process.env.ADS_BLOCK_ID || process.env.ADSGRAM_BLOCK_ID || '30379'; // 🌟 Đọc trực tiếp từ ENV Render
+const ADSGRAM_BLOCK_ID = process.env.ADS_BLOCK_ID || process.env.ADSGRAM_BLOCK_ID || '30379'; // Đọc trực tiếp từ ENV Render
 
 if (!BOT_TOKEN || isNaN(ADMIN_ID) || !MY_APP_LINK) {
     console.error('❌ THIẾU CẤU HÌNH BIẾN MÔI TRƯỜNG (ENV)! Tiến trình khởi động server bị hủy.');
@@ -173,8 +173,6 @@ if (fs.existsSync(EXCEL_FILE_PATH)) {
 // ==========================================
 // 4. ROUTE WEB API
 // ==========================================
-
-// Cung cấp Block ID an toàn cho Frontend khi ứng dụng yêu cầu qua API kín
 app.get('/api/ads-config', (req, res) => {
     res.json({ blockId: ADSGRAM_BLOCK_ID });
 });
@@ -279,7 +277,7 @@ app.all('/api/user/update', async (req, res) => {
     res.json(user);
 });
 
-// Trang đệm kích hoạt Adsgram ngoài ứng dụng (Đã đồng bộ nhúng tự động Block ID từ ENV)
+// Trang đệm kích hoạt Adsgram ngoài ứng dụng
 app.get('/watch-ads', (req, res) => {
     const userId = req.query.userId;
     if (!userId || isNaN(parseInt(userId, 10))) return res.status(400).send("<h3>❌ Cấu trúc URL sai định dạng!</h3>");
@@ -311,7 +309,6 @@ app.get('/watch-ads', (req, res) => {
             <script>
                 document.addEventListener('DOMContentLoaded', () => {
                     if (window.Adsgram) {
-                        // 🌟 Tự động nạp mã sạch từ biến môi trường của Server bảo mật
                         const AdController = window.Adsgram.createAdController('${ADSGRAM_BLOCK_ID}');
                         AdController.show().then(async () => {
                             document.getElementById('status-text').innerText = "⏳ Đang ghi nhận phần thưởng lên RAM Server...";
@@ -366,6 +363,8 @@ async function triggerAutoBackup() {
 // ==========================================
 // 6. CHỨC NĂNG ĐIỀU HÀNH BOT TELEGRAM (ADMIN CONTROL)
 // ==========================================
+
+// Middleware tối ưu chặn quyền & nhận diện chuẩn các câu lệnh của Admin
 function isAdminMiddleware(ctx, next) {
     if (ctx.from?.id === ADMIN_ID) return next();
     return ctx.reply('❌ Lệnh này chỉ dành riêng cho Ban Quản Trị.').catch(() => {});
@@ -410,6 +409,7 @@ bot.start(async (ctx) => {
     ])).catch(() => {});
 });
 
+// 🌟 ĐỒNG NHẤT 1: Nhận diện chuẩn xác lệnh /saoluu từ Admin để gửi file Excel
 bot.command('saoluu', isAdminMiddleware, async (ctx) => {
     try {
         const userList = Array.from(userDatabase.values());
@@ -438,6 +438,34 @@ bot.command('saoluu', isAdminMiddleware, async (ctx) => {
     }
 });
 
+// 🌟 ĐỒNG NHẤT 2: Nhận diện chuẩn xác lệnh /broadcast và bóc nội dung để gửi tin nhắn hàng loạt
+bot.command('broadcast', isAdminMiddleware, async (ctx) => {
+    try {
+        const msgText = ctx.payload ? ctx.payload.trim() : ""; // Tự động lấy toàn bộ nội dung tin nhắn sau dấu cách
+        if (!msgText) return ctx.reply('⚠️ Cú pháp đúng: `/broadcast [Nội dung tin nhắn cần gửi]`');
+
+        const userIds = Array.from(userDatabase.keys());
+        await ctx.reply(`📣 Đang tiến hành gửi thông báo tới toàn bộ ${userIds.length} người dùng...`);
+
+        let thanhCong = 0;
+        for (const id of userIds) {
+            try {
+                await ctx.telegram.sendMessage(id, `📢 *THÔNG BÁO TỪ HỆ THỐNG*\n\n${msgText}`, { parse_mode: 'Markdown' });
+                thanhCong++;
+                // Nghỉ ngắn 50ms giữa các lần gửi để không bị dính án phạt spam (Flood Rate Limit) của Telegram API
+                await new Promise(resolve => setTimeout(resolve, 50));
+            } catch (e) {
+                // Bỏ qua nếu người dùng đã block bot
+            }
+        }
+        await ctx.reply(`✅ Tiến trình broadcast hoàn tất!\n📊 Thành công: ${thanhCong}/${userIds.length}`);
+    } catch (err) {
+        console.error("Lỗi khi chạy broadcast:", err.message);
+        ctx.reply('❌ Có lỗi xảy ra trong quá trình broadcast thông báo!').catch(() => {});
+    }
+});
+
+// Nạp khôi phục database bằng cách kéo thả file .xlsx trực tiếp vào đoạn chat Admin
 bot.on('document', isAdminMiddleware, async (ctx) => {
     const doc = ctx.message.document;
     if (!doc.file_name.endsWith('.xlsx')) {
