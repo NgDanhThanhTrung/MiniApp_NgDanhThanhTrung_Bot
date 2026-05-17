@@ -2,7 +2,7 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Frontend Logic API Engine (Chạy Nguyên Khối kết nối Realtime với RAM Server)
  * Năm vận hành: 2026
- * Phiên bản: 3.2.1 (Đồng bộ ID nút btn-watch-ad & UnitID 30388 thực tế)
+ * Phiên bản: 3.3.0 (Đồng bộ tuyệt đối UnitID 30388 & Cơ chế Auto-Failback Sandbox)
  */
 
 const tg = window.Telegram ? window.Telegram.WebApp : null;
@@ -39,7 +39,7 @@ async function fetchUserAccountData() {
     try {
         const initDataRaw = tg ? tg.initData : "";
         if (!initDataRaw) {
-            console.warn("⚠️ Chạy ngoài Telegram. Kích hoạt thông số Sandbox.");
+            console.warn("📡 Môi trường ngoài Telegram. Kích hoạt thông số Sandbox.");
             serverUserState = { id: 99999, first_name: "Dev Local", coins: 75000, spinsLeft: 5, dailySpinsCount: 2, dailyAdsCount: 1 };
             updateUI();
             return;
@@ -118,7 +118,6 @@ function updateUI() {
     const adsRemaining = Math.max(0, CONFIG.MAX_DAILY_ADS - serverUserState.dailyAdsCount);
     document.getElementById('txt-daily-ads').innerText = `${adsRemaining}/${CONFIG.MAX_DAILY_ADS}`;
 
-    // Link mời chuẩn dẫn thẳng vào Bot Telegram chính thức của bạn
     document.getElementById('referral-url').value = `https://t.me/SieuCapCayXu_NDTTrung_Bot?start=${serverUserState.id}`;
 }
 
@@ -142,7 +141,7 @@ function showToast(message) {
     }, 3000);
 }
 
-// LOGIC XOAY VÒNG QUAY MAY MẮN
+// CORES LOGIC VÒNG QUAY MAY MẮN
 document.getElementById('btn-spin').addEventListener('click', async () => {
     if (isWheelSpinning) return;
 
@@ -182,13 +181,8 @@ document.getElementById('btn-spin').addEventListener('click', async () => {
     }, 4100);
 });
 
-// LOGIC XEM QUẢNG CÁO ADSGRAM THỰC TẾ (ĐỒNG BỘ CHUẨN ID KHÔNG CHỨA CHỮ S Ở CUỐI)
+// LOGIC XEM QUẢNG CÁO ADSGRAM THỰC TẾ (TÍCH HỢP ĐỒNG BỘ AUTO-FAILBACK)
 document.getElementById('btn-watch-ad').addEventListener('click', async () => {
-    if (!window.Adsgram) {
-        showToast("❌ Lỗi: Không thể kết nối tới SDK Adsgram. Vui lòng tải lại trang!");
-        return;
-    }
-
     const now = Date.now();
     if (serverUserState.lastAdsTimestamp && (now - serverUserState.lastAdsTimestamp < CONFIG.ADS_COOLDOWN * 1000)) {
         const secWait = Math.ceil((CONFIG.ADS_COOLDOWN * 1000 - (now - serverUserState.lastAdsTimestamp)) / 1000);
@@ -203,34 +197,45 @@ document.getElementById('btn-watch-ad').addEventListener('click', async () => {
         return;
     }
 
-    // Đồng bộ gọi trỏ chính xác đến nút btn-watch-ad trong file HTML
     const watchBtn = document.getElementById('btn-watch-ad');
     watchBtn.disabled = true;
-    showToast("🔄 Đang kết nối luồng quảng cáo Adsgram...");
 
-    // Khởi tạo chính xác dựa theo UnitID 30388 đang Active trên Dashboard
-    const AdController = window.Adsgram.createAdController('30388');
+    // LUỒNG CHẠY CHUẨN KHI BẬT TRÊN MOBILE TELEGRAM CHÍNH THỨC (CÓ SDK)
+    if (window.Adsgram) {
+        showToast("🔄 Đang kết nối luồng quảng cáo Adsgram...");
+        const AdController = window.Adsgram.createAdController('30388'); // UnitID thật của bạn
 
-    try {
-        // BƯỚC 1: Gọi hiển thị trình chạy quảng cáo thực tế
-        await AdController.show();
-        
-        // BƯỚC 2: Chỉ khi xem hết 15s thành công -> mới chạy xuống luồng gửi data nhận thưởng
-        showToast("⏳ Đang đồng bộ phần thưởng lên RAM...");
-        const ok = await postAssetUpdate('watch_ads_success');
-        if (ok) {
-            triggerHaptic('success');
-            showToast("💎 Thành công! Cộng +12,000 Xu & +1 Lượt quay.");
+        try {
+            await AdController.show();
+            showToast("⏳ Đang đồng bộ phần thưởng lên RAM...");
+            const ok = await postAssetUpdate('watch_ads_success');
+            if (ok) {
+                triggerHaptic('success');
+                showToast("💎 Thành công! Cộng +12,000 Xu & +1 Lượt quay.");
+            }
+        } catch (error) {
+            triggerHaptic('error');
+            if (error && error.done === false) {
+                showToast("❌ Bạn đã tắt video quá sớm! Không nhận được thưởng.");
+            } else {
+                showToast("⚠️ Đối tác Adsgram đang phê duyệt hoặc hết video khả dụng. Bạn không được nhận xu!");
+            }
+        } finally {
+            watchBtn.disabled = false;
         }
-    } catch (error) {
-        triggerHaptic('error');
-        if (error && error.done === false) {
-            showToast("❌ Bạn đã tắt video quá sớm! Không nhận được thưởng.");
-        } else {
-            showToast("⚠️ Hiện tại không có video quảng cáo khả dụng hoặc hệ thống đang chờ duyệt. Bạn KHÔNG được nhận xu!");
-        }
-    } finally {
-        watchBtn.disabled = false;
+    } 
+    // LUỒNG FAILBACK AN TOÀN KHI BẠN TEST TRÊN TRÌNH DUYỆT NGOÀI TELEGRAM CHỐNG SẬP
+    else {
+        showToast("📡 Phát hiện chạy ngoài Telegram. Kích hoạt trình giả lập Adsgram 2s...");
+        setTimeout(async () => {
+            showToast("⏳ Đang giả lập đồng bộ phần thưởng lên RAM...");
+            const ok = await postAssetUpdate('watch_ads_success');
+            if (ok) {
+                triggerHaptic('success');
+                showToast("💎 [Chế độ Test Web] Giả lập cộng +12,000 Xu & +1 Lượt quay thành công!");
+            }
+            watchBtn.disabled = false;
+        }, 2000);
     }
 });
 
