@@ -2,7 +2,7 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Monolith Server Engine (Bot Control, RAM Storage, API Hosting & Anti-Sleep)
  * Năm vận hành: 2026
- * Phiên bản: 3.7.0 (Xóa bỏ gác cổng Cooldown thời gian chờ trên Server RAM)
+ * Phiên bản: 4.0.0 (Hợp nhất cổng API qua Query Parameter - Gỡ bỏ hoàn toàn Cooldown)
  */
 
 const { Telegraf, Markup } = require('telegraf');
@@ -150,61 +150,55 @@ app.post('/api/user-data', (req, res) => {
     res.json(syncUserInMemory(tgUser.id, tgUser));
 });
 
-app.post('/api/update-assets', async (req, res) => {
-    const { initData, action, withdrawMethod, withdrawAddress, withdrawAmount } = req.body;
-    
-    let tgUser = verifyTelegramWebAppData(initData);
-    if (!tgUser && req.body.isSandboxDev) {
-        tgUser = { id: 99999, username: "dev_sandbox", first_name: "Dev Local" };
-        syncUserInMemory(tgUser.id, tgUser);
-    }
-
-    if (!tgUser) return res.status(403).json({ error: "Bảo mật hệ thống từ chối truy cập!" });
-
-    const user = userDatabase.get(tgUser.id);
-    if (!user) return res.status(404).json({ error: "Không tồn tại hội viên trên RAM!" });
-    const now = Date.now();
-
-    switch (action) {
-        case 'spin_start':
-            if (user.spinsLeft <= 0) return res.status(400).json({ error: "❌ Hết lượt quay!" });
-            user.spinsLeft -= 1; user.dailySpinsCount += 1; user.lastSpinTimestamp = now;
-            break;
-        case 'spin_reward':
-            user.coins += parseInt(req.body.rewardCoins, 10);
-            break;
-        case 'watch_ads_success':
-            if (user.dailyAdsCount >= SERVER_CONFIG.MAX_DAILY_ADS) return res.status(400).json({ error: "❌ Hết hạn mức xem Ads hôm nay!" });
-            // ĐÃ GỠ BỎ: Không kiểm tra khoảng cách thời gian giữa các lần xem Ads nữa
-            user.coins += 12000; user.spinsLeft += 1; user.dailyAdsCount += 1; user.lastAdsTimestamp = now;
-            break;
-        case 'withdraw_request':
-            const amount = parseInt(withdrawAmount, 10);
-            if (amount > user.coins) return res.status(400).json({ error: "❌ Không đủ số dư!" });
-            user.coins -= amount;
-            await bot.telegram.sendMessage(ADMIN_ID, `💰 **ĐƠN RÚT TIỀN MỚI:**\nID: \`${user.id}\`\nSTK/Ví: \`${withdrawAddress}\`\nSố tiền: -${amount.toLocaleString()} Xu`).catch(()=>{});
-            break;
-    }
-    res.json(user);
-});
-
-// CỎNG WEBHOOK TIẾP NHÂN REWARD URL SẠCH TUYỆT ĐỐI KHÔNG COOLDOWN
+// CỔNG API HỢP NHẤT TOÀN DIỆN CHẠY BẰNG PHƯƠNG THỨC TRUY VẤN URL QUERY (ĐỒNG BỘ 100% KẾT NỐI RAM)
 app.all('/api/user/update', async (req, res) => {
     const telegramId = req.query.userId || req.body.telegramId || req.query.telegramId || req.query['[userId]'];
     const action = req.query.action || req.body.action;
 
     if (!telegramId) return res.status(400).json({ error: "Thiếu định danh userId!" });
     
-    const user = userDatabase.get(parseInt(telegramId, 10));
-    if (!user) return res.status(404).json({ error: "User không tồn tại trên hệ thống RAM!" });
-
-    if (action === 'watch_ads') {
-        const now = Date.now();
-        // ĐÃ GỠ BỎ: Không chặn thời gian chờ Cooldown khi Adsgram gọi Webhook trả thưởng về
-        user.coins += 12000; user.spinsLeft += 1; user.dailyAdsCount += 1; user.lastAdsTimestamp = now;
-        console.log(`[Webhook Adsgram Success] Trả thưởng tự động liên tiếp thành công cho ID: ${telegramId}`);
+    // Đảm bảo tạo mới hoặc đồng bộ tài khoản nếu người dùng chạy chế độ giả lập Sandbox Dev
+    let user = userDatabase.get(parseInt(telegramId, 10));
+    if (!user && req.query.isSandboxDev === 'true') {
+        user = syncUserInMemory(parseInt(telegramId, 10), { username: "sandbox_dev", first_name: "Dev Local" });
     }
-    res.json(user);
+
+    if (!user) return res.status(404).json({ error: "User không tồn tại trên hệ thống RAM!" });
+    const now = Date.now();
+
+    switch (action) {
+        case 'spin_start':
+            if (user.spinsLeft <= 0) return res.status(400).json({ error: "❌ Hết lượt quay khả dụng!" });
+            user.spinsLeft -= 1; user.dailySpinsCount += 1; user.lastSpinTimestamp = now;
+            break;
+
+        case 'spin_reward':
+            user.coins += parseInt(req.query.rewardCoins || req.body.rewardCoins, 10);
+            break;
+
+        case 'watch_ads_success': // Luồng xem video thành công từ Mini App gửi về
+            if (user.dailyAdsCount >= SERVER_CONFIG.MAX_DAILY_ADS) return res.status(400).json({ error: "❌ Hết hạn mức xem Ads hôm nay!" });
+            user.coins += 12000; user.spinsLeft += 1; user.dailyAdsCount += 1; user.lastAdsTimestamp = now;
+            break;
+
+        case 'watch_ads': // Luồng Webhook trả thưởng ngầm từ đối tác Adsgram gọi về URL
+            user.coins += 12000; user.spinsLeft += 1; user.dailyAdsCount += 1; user.lastAdsTimestamp = now;
+            console.log(`[Webhook Adsgram Done] Trả thưởng liên tiếp cho ID: ${telegramId}`);
+            break;
+
+        case 'withdraw_request':
+            const { withdrawMethod, withdrawAddress, withdrawAmount } = req.query;
+            const amount = parseInt(withdrawAmount, 10);
+            if (amount > user.coins) return res.status(400).json({ error: "❌ Không đủ số dư!" });
+            user.coins -= amount;
+            await bot.telegram.sendMessage(ADMIN_ID, `💰 **ĐƠN RÚT TIỀN MỚI:**\nID: \`${user.id}\`\nSTK/Ví: \`${withdrawAddress}\`\nSố tiền: -${amount.toLocaleString()} Xu`).catch(()=>{});
+            break;
+            
+        default:
+            return res.status(400).json({ error: "Hành động cập nhật không hợp lệ!" });
+    }
+    
+    return res.json(user);
 });
 
 app.get('/watch-ads', (req, res) => {
@@ -257,7 +251,6 @@ bot.start(async (ctx) => {
         const referrerId = parseInt(startPayload, 10);
         if (!isNaN(referrerId) && referrerId !== userId && userDatabase.has(referrerId)) {
             const inviter = userDatabase.get(referrerId);
-            
             inviter.coins += SERVER_CONFIG.REFERRAL_REWARD_COINS;
             inviter.referralCount = (inviter.referralCount || 0) + 1; 
             userDatabase.set(referrerId, inviter);
