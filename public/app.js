@@ -2,7 +2,7 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Frontend Logic API Engine (Chạy Nguyên Khối kết nối Realtime với RAM Server)
  * Năm vận hành: 2026
- * Phiên bản: 3.1.0 (Đồng nhất hệ thống định dạng sạch userId không ngoặc vuông)
+ * Phiên bản: 3.2.0 (Bảo mật: Tự động kéo mã Adsgram Block ID kín từ Server ENV)
  */
 
 const tg = window.Telegram ? window.Telegram.WebApp : null;
@@ -182,7 +182,7 @@ document.getElementById('btn-spin').addEventListener('click', async () => {
     }, 4100);
 });
 
-// LOGIC XEM QUẢNG CÁO ADSGRAM (ĐỒNG BỘ VÁ LỖ HỔNG)
+// LOGIC XEM QUẢNG CÁO ADSGRAM (BẢO MẬT: ĐÃ ĐỒNG BỘ KÉO ID TỪ ENV BACKEND)
 document.getElementById('btn-watch-ad').addEventListener('click', async () => {
     if (!window.Adsgram) {
         showToast("❌ Lỗi: Không thể kết nối tới SDK Adsgram. Thử lại sau!");
@@ -205,12 +205,17 @@ document.getElementById('btn-watch-ad').addEventListener('click', async () => {
 
     const watchBtn = document.getElementById('btn-watch-ad');
     watchBtn.disabled = true;
-    showToast("🔄 Đang tải luồng quảng cáo Adsgram...");
-
-    // CẤU HÌNH THẬT: Khởi tạo với mã Block ID 30379 của bạn
-    const AdController = window.Adsgram.createAdController('30379');
+    showToast("🔄 Đang kết nối máy chủ quảng cáo an toàn...");
 
     try {
+        // 🌟 Bước tiến độc bản: Gọi API lấy mã Block ID bảo mật từ ENV của Server
+        const configResponse = await fetch(`${BACKEND_API_URL}/api/ads-config`);
+        const configData = await configResponse.json();
+        const activeBlockId = configData.blockId || '30379';
+
+        // Khởi tạo luồng điều khiển Adsgram live bằng mã bọc an toàn
+        const AdController = window.Adsgram.createAdController(activeBlockId);
+        
         // Ép xem xong quảng cáo 15 giây thực tế
         await AdController.show();
         
@@ -226,7 +231,7 @@ document.getElementById('btn-watch-ad').addEventListener('click', async () => {
         if (error && error.done === false) {
             showToast("❌ Bạn đã tắt video quá sớm! Không nhận được thưởng.");
         } else {
-            showToast("⚠️ Không có video quảng cáo khả dụng hoặc hệ thống đang chờ duyệt. Bạn KHÔNG được nhận xu!");
+            showToast("⚠️ Không có video quảng cáo khả dụng hoặc lỗi cấu hình. Bạn KHÔNG được nhận xu!");
         }
     } finally {
         watchBtn.disabled = false;
