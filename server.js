@@ -2,7 +2,7 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Monolith Server Engine (Bot Control, RAM Storage, API Hosting & Anti-Sleep)
  * Năm vận hành: 2026
- * Phiên bản: 2.9.0 (Cấu hình hệ thống thưởng Referral 50,000 Xu khi mời hội viên mới)
+ * Phiên bản: 3.0.0 (Đồng bộ cấu trúc Webhook Adsgram định dạng tham số [userId])
  */
 
 const { Telegraf, Markup } = require('telegraf');
@@ -43,7 +43,7 @@ const SERVER_CONFIG = {
     SPIN_COOLDOWN_MS: 30 * 1000,
     ADS_COOLDOWN_MS: 60 * 1000,
     MIN_VND_COINS_LIMIT: 2000000, // Tối thiểu 2,000,000 Xu = 2,000 VNĐ cho MoMo/Bank
-    REFERRAL_REWARD_COINS: 50000  // 🔥 THƯỞNG MỜI BẠN BÈ: 50,000 XU
+    REFERRAL_REWARD_COINS: 50000  // Thưởng mời bạn bè: 50,000 Xu
 };
 
 // ==========================================
@@ -163,7 +163,7 @@ if (fs.existsSync(EXCEL_FILE_PATH)) {
         const workbook = XLSX.readFile(EXCEL_FILE_PATH);
         const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
         const count = loadRowsIntoDatabase(rows);
-        console.log(`🎉 [RAM Storage] Đã khôi phục thành công dữ liệu của ${count} hội viên từ file Excel sao lưu.`);
+        console.log(`🎉 [RAM Storage] Đã khôi phục thành công dữ liệu của ${count} hội viên từ file Excel.`);
     } catch (err) {
         console.error("❌ Thất bại khi đọc file Excel khôi phục dữ liệu ban đầu:", err.message);
     }
@@ -249,25 +249,38 @@ app.post('/api/update-assets', async (req, res) => {
     res.json(user);
 });
 
-app.post('/api/user/update', async (req, res) => {
-    const { telegramId, action } = req.body;
+// CỔNG API TIẾP NHẬN REWARD WEBHOOK TỪ ADSGRAM (XỬ LÝ ĐỒNG BỘ ĐỊNH DẠNG THAM SỐ [userId])
+app.all('/api/user/update', async (req, res) => {
+    // Lấy ID thông minh từ body hoặc từ Query URL (Hỗ trợ bóc tách tham số dạng chuỗi [userId])
+    const telegramId = req.body.telegramId || req.query.telegramId || req.query['[userId]'];
+    const action = req.body.action || req.query.action;
+
+    if (!telegramId) {
+        return res.status(400).json({ error: "❌ Thao tác thất bại: Thiếu tham số định danh telegramId trên cấu trúc URL!" });
+    }
+    
     const uid = parseInt(telegramId, 10);
     const user = userDatabase.get(uid);
-    if (!user) return res.status(404).json({ error: "User không tồn tại!" });
+    if (!user) {
+        return res.status(404).json({ error: "❌ Hội viên không tồn tại trên bộ nhớ đệm RAM!" });
+    }
 
     if (action === 'watch_ads') {
         const now = Date.now();
-        if (user.dailyAdsCount >= SERVER_CONFIG.MAX_DAILY_ADS) return res.status(400).json({ error: "Max Ads" });
-        if (now - user.lastAdsTimestamp < SERVER_CONFIG.ADS_COOLDOWN_MS) return res.status(400).json({ error: "Cooldown" });
+        if (user.dailyAdsCount >= SERVER_CONFIG.MAX_DAILY_ADS) return res.status(400).json({ error: "Max Ads Limit" });
+        if (now - user.lastAdsTimestamp < SERVER_CONFIG.ADS_COOLDOWN_MS) return res.status(400).json({ error: "Cooldown Engine Active" });
 
         user.coins += 12000;      
         user.spinsLeft += 1;      
         user.dailyAdsCount += 1;  
         user.lastAdsTimestamp = now;
+        
+        console.log(`[Adsgram Webhook Server] Khớp định dạng thành công! +12,000 Xu cho UserID: ${uid}`);
     }
     res.json(user);
 });
 
+// Cổng điều hướng hiển thị Adsgram qua liên kết ngoài
 app.get('/watch-ads', (req, res) => {
     const userId = req.query.userId;
     if (!userId || isNaN(parseInt(userId, 10))) return res.status(400).send("<h3>❌ Cấu trúc URL sai định dạng!</h3>");
@@ -302,16 +315,17 @@ app.get('/watch-ads', (req, res) => {
                         const AdController = window.Adsgram.createAdController('30379');
                         AdController.show().then(async () => {
                             document.getElementById('status-text').innerText = "⏳ Đang ghi nhận phần thưởng lên RAM Server...";
-                            const response = await fetch('/api/user/update', {
+                            
+                            // Điều hướng trích xuất gọi cổng webhook gán tham số dạng cấu trúc mảng [userId]
+                            const response = await fetch('/api/user/update?[userId]=${userId}&action=watch_ads', {
                                 method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ telegramId: "${userId}", action: "watch_ads" })
+                                headers: { 'Content-Type': 'application/json' }
                             });
                             if (response.ok) {
                                 document.getElementById('status-text').innerText = "🎉 THÀNH CÔNG!";
                                 alert("💎 Cộng +12,000 Xu thành công!");
                             } else {
-                                document.getElementById('status-text').innerText = "❌ Lỗi: Hệ thống từ chối.";
+                                document.getElementById('status-text').innerText = "❌ Lỗi: Hệ thống từ chối do Cooldown hoặc quá hạn mức hằng ngày.";
                             }
                         }).catch(() => {
                             document.getElementById('status-text').innerText = "❌ Lỗi tải quảng cáo.";
@@ -362,31 +376,21 @@ function isAdminMiddleware(ctx, next) {
     return ctx.reply('❌ Lệnh này chỉ dành riêng cho Ban Quản Trị.').catch(() => {});
 }
 
-// LẮNG NGHE LỆNH KHỞI ĐỘNG VÀ XỬ LÝ TRAO THƯỞNG GIỚI THIỆU 50.000 XU
 bot.start(async (ctx) => {
     const userId = ctx.from.id;
-    const todayStr = new Date().toISOString().split('T')[0];
-    
-    // Kiểm tra xem user mới có click vào link chứa mã giới thiệu (?startapp=ID) hay không
     const startPayload = ctx.startPayload; 
     let isNewUser = !userDatabase.has(userId);
 
-    // Đồng bộ/Khởi tạo tài khoản người chơi mới hoặc cũ lên RAM
     const user = syncUserInMemory(userId, ctx.from);
 
-    // Nếu là thành viên mới tinh và có mã người giới thiệu hợp lệ
     if (isNewUser && startPayload && startPayload.startsWith('ref_')) {
         const inviterId = parseInt(startPayload.replace('ref_', ''), 10);
         
-        // Chặn tự mời chính mình và kiểm tra người mời có tồn tại trên RAM không
         if (!isNaN(inviterId) && inviterId !== userId && userDatabase.has(inviterId)) {
             const inviter = userDatabase.get(inviterId);
-            
-            // 🔥 Thực thi cộng chuẩn xác 50,000 xu vào tài sản người mời
             inviter.coins += SERVER_CONFIG.REFERRAL_REWARD_COINS;
             userDatabase.set(inviterId, inviter);
 
-            // Bắn tin nhắn trực tiếp báo hỷ cho người giới thiệu qua Bot
             try {
                 await bot.telegram.sendMessage(
                     inviterId, 
@@ -469,7 +473,7 @@ bot.on('document', isAdminMiddleware, async (ctx) => {
 });
 
 // ==========================================
-// 9. KHỞI CHẠY MÁY CHỦ NGUYÊN KHỐI MONOLITH
+// 7. KHỞI CHẠY MÁY CHỦ NGUYÊN KHỐI MONOLITH
 // ==========================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`[Hosting] Máy chủ đang mở tại cổng Port: ${PORT}`));
