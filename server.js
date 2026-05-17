@@ -2,7 +2,7 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Monolith Server Engine (Bot Control, RAM Storage, API Hosting & Anti-Sleep)
  * Năm vận hành: 2026
- * Phiên bản: 3.4.5 (Đồng bộ tuyệt đối cấu trúc tài sản RAM & Vá lỗi cổng nhận diện)
+ * Phiên bản: 3.5.0 (Cấu hình phân luồng an toàn - Nhận diện đa môi trường Sandbox/Live)
  */
 
 const { Telegraf, Markup } = require('telegraf');
@@ -135,7 +135,7 @@ if (fs.existsSync(EXCEL_FILE_PATH)) {
     try {
         const workbook = XLSX.readFile(EXCEL_FILE_PATH);
         loadRowsIntoDatabase(XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]));
-        console.log(`[RAM Base] Đã khôi phục thành công dữ liệu Excel cứng vào RAM.`);
+        console.log(`[RAM Base] Khôi phục dữ liệu Excel thành công.`);
     } catch (err) {}
 }
 
@@ -149,7 +149,6 @@ app.post('/api/user-data', (req, res) => {
 app.post('/api/update-assets', async (req, res) => {
     const { initData, action, withdrawMethod, withdrawAddress, withdrawAmount } = req.body;
     
-    // NÂNG CẤP CHUYỂN MÔI TRƯỜNG: Cho phép lấy thông tin giả lập nếu chạy chế độ Sandbox ngoài Web
     let tgUser = verifyTelegramWebAppData(initData);
     if (!tgUser && req.body.isSandboxDev) {
         tgUser = { id: 99999, username: "dev_sandbox", first_name: "Dev Local" };
@@ -184,7 +183,7 @@ app.post('/api/update-assets', async (req, res) => {
     res.json(user);
 });
 
-// CỔNG WEBHOOK KHỚP REWARD URL ĐÃ CẤU HÌNH TRÊN DASHBOARD ADSGRAM
+// CỔNG WEBHOOK ĐỒNG BỘ TRẢ THƯỞNG DẠNG SẠCH userId
 app.all('/api/user/update', async (req, res) => {
     const telegramId = req.query.userId || req.body.telegramId || req.query.telegramId || req.query['[userId]'];
     const action = req.query.action || req.body.action;
@@ -213,7 +212,8 @@ app.get('/watch-ads', (req, res) => {
             <script>
                 document.addEventListener('DOMContentLoaded', () => {
                     if(window.Adsgram) {
-                        const AdController = window.Adsgram.createAdController('30388');
+                        // Đồng bộ cổng test chạy link ngoài
+                        const AdController = window.Adsgram.createAdController('30379');
                         AdController.show().then(async () => {
                             await fetch('/api/user/update?userId=${userId}&action=watch_ads');
                             alert("💎 Cộng tài sản thành công!");
