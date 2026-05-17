@@ -2,12 +2,9 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Frontend Logic API Engine (Chạy Nguyên Khối kết nối Realtime với RAM Server)
  * Năm vận hành: 2026
- * Phiên bản: 3.0.0 (Đồng nhất cấu trúc API Tham số userId chuẩn toàn hệ thống)
+ * Phiên bản: 3.1.0 (Đồng nhất hệ thống định dạng sạch userId không ngoặc vuông)
  */
 
-// ==========================================
-// 1. KHỞI TẠO TELEGRAM SDK VÀ ĐỊNH TUYẾN API
-// ==========================================
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 const BACKEND_API_URL = window.location.origin; 
 
@@ -17,7 +14,6 @@ if (tg) {
     if (tg.disableVerticalSwipes) tg.disableVerticalSwipes(); 
 }
 
-// Cấu hình các tham số đồng bộ khớp 100% với Server cấu hình
 const CONFIG = {
     COIN_TO_VND_RATE: 1000, 
     SPIN_COOLDOWN: 30,      
@@ -26,29 +22,104 @@ const CONFIG = {
     MAX_DAILY_ADS: 5,       
 };
 
-// State lưu trữ cục bộ để render UI đồng bộ
 let serverUserState = {
     id: 0,
     coins: 0,
-    spins: 0,
+    spinsLeft: 0,
+    lastSpinTimestamp: 0,
+    lastAdsTimestamp: 0,
     dailySpinsCount: 0,
-    dailyAdsCount: 0,
-    lastSpinTime: 0,
-    lastAdsTime: 0,
-    username: "Người dùng Telegram"
+    dailyAdsCount: 0
 };
 
-function showToast(message) {
-    const container = document.getElementById('toast-container');
-    if (!container) return;
-    container.textContent = message;
-    container.style.opacity = '1';
-    container.style.transform = 'translate(-50%, 0)';
+let isWheelSpinning = false;
+const REWARDS_MAPPING = [10000, 200, 5000, 1000, 50000, 2000, 20000, 500];
+
+async function fetchUserAccountData() {
+    try {
+        const initDataRaw = tg ? tg.initData : "";
+        if (!initDataRaw) {
+            console.warn("⚠️ Chạy ngoài Telegram. Kích hoạt thông số Sandbox.");
+            serverUserState = { id: 99999, first_name: "Dev Local", coins: 75000, spinsLeft: 5, dailySpinsCount: 2, dailyAdsCount: 1 };
+            updateUI();
+            return;
+        }
+
+        const response = await fetch(`${BACKEND_API_URL}/api/user-data`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ initData: initDataRaw })
+        });
+
+        if (response.ok) {
+            serverUserState = await response.json();
+            updateUI();
+        } else {
+            showToast("❌ Lỗi mạng: Không thể kết nối tới RAM Server.");
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+async function postAssetUpdate(actionName, extraPayload = {}) {
+    try {
+        const initDataRaw = tg ? tg.initData : "";
+        if (!initDataRaw) {
+            handleDevSandboxFallback(actionName, extraPayload);
+            return true;
+        }
+
+        const response = await fetch(`${BACKEND_API_URL}/api/update-assets`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ initData: initDataRaw, action: actionName, ...extraPayload })
+        });
+
+        if (response.ok) {
+            serverUserState = await response.json();
+            updateUI();
+            return true;
+        } else {
+            const errorObj = await response.json().catch(() => ({ error: "Hành động bị từ chối." }));
+            showToast(errorObj.error);
+            return false;
+        }
+    } catch (err) {
+        showToast("❌ Cổng mạng nghẽn, không thể kết nối tới Server.");
+        return false;
+    }
+}
+
+function handleDevSandboxFallback(action, payload) {
+    if (action === 'spin_start') {
+        serverUserState.spinsLeft -= 1;
+        serverUserState.dailySpinsCount += 1;
+    } else if (action === 'spin_reward') {
+        serverUserState.coins += parseInt(payload.rewardCoins, 10);
+    } else if (action === 'watch_ads_success') {
+        serverUserState.coins += 12000;
+        serverUserState.spinsLeft += 1;
+        serverUserState.dailyAdsCount += 1;
+    }
+    updateUI();
+}
+
+function updateUI() {
+    document.getElementById('username').innerText = serverUserState.username ? `@${serverUserState.username}` : (serverUserState.first_name || "Hội viên");
+    document.getElementById('user-points').innerText = serverUserState.coins.toLocaleString();
     
-    setTimeout(() => {
-        container.style.opacity = '0';
-        container.style.transform = 'translate(-50%, 20px)';
-    }, 3000);
+    const vndEstimation = Math.floor(serverUserState.coins / CONFIG.COIN_TO_VND_RATE);
+    document.getElementById('vnd-estimation').innerText = vndEstimation.toLocaleString();
+
+    document.getElementById('txt-spins-left').innerText = serverUserState.spinsLeft;
+    document.getElementById('txt-daily-spins').innerText = `${serverUserState.dailySpinsCount}/${CONFIG.MAX_DAILY_SPINS}`;
+    
+    const adsRemaining = Math.max(0, CONFIG.MAX_DAILY_ADS - serverUserState.dailyAdsCount);
+    document.getElementById('txt-daily-ads').innerText = `${adsRemaining}/${CONFIG.MAX_DAILY_ADS}`;
+
+    // Link mời chuẩn dẫn thẳng vào Bot Telegram chính thức của bạn
+    document.getElementById('referral-url').value = `https://t.me/SieuCapCayXu_NDTTrung_Bot?start=${serverUserState.id}`;
 }
 
 function triggerHaptic(type) {
@@ -59,202 +130,151 @@ function triggerHaptic(type) {
     }
 }
 
-// ==========================================
-// 2. KẾT NỐI ĐỒNG BỘ DỮ LIỆU VỚI SERVER
-// ==========================================
-async function fetchUserStatus() {
-    try {
-        const userId = tg && tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : 123456789; 
-        const username = tg && tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user.username : "Ẩn danh";
-
-        const response = await fetch(`${BACKEND_API_URL}/api/user/status?userId=${userId}&username=${encodeURIComponent(username)}`);
-        if (response.ok) {
-            serverUserState = await response.json();
-            renderUI();
-        } else {
-            showToast("❌ Không thể đồng bộ trạng thái từ RAM Server!");
-        }
-    } catch (err) {
-        console.error("Lỗi đồng bộ dữ liệu đầu:", err);
-        showToast("❌ Máy chủ đang bận, vui lòng thử lại sau!");
-    }
+function showToast(message) {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    container.innerText = message;
+    container.style.opacity = '1';
+    container.style.transform = 'translate(-50%, 0)';
+    setTimeout(() => {
+        container.style.opacity = '0';
+        container.style.transform = 'translate(-50%, 20px)';
+    }, 3000);
 }
 
-// Gửi yêu cầu cập nhật tài sản lên Server RAM (ĐÃ ĐỒNG NHẤT userId)
-async function postAssetUpdate(action, extraData = {}) {
-    try {
-        // Đồng nhất tham số viết sạch dưới dạng ?userId= giống với link ref và status
-        const response = await fetch(`${BACKEND_API_URL}/api/user/update?userId=${serverUserState.id}&action=${action}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(extraData)
-        });
-
-        if (response.ok) {
-            serverUserState = await response.json();
-            renderUI();
-            return true;
-        } else {
-            const errData = await response.json();
-            showToast(`⚠️ Từ chối: ${errData.error || 'Thao tác không hợp lệ!'}`);
-            return false;
-        }
-    } catch (err) {
-        console.error("Lỗi cập nhật tài sản:", err);
-        showToast("❌ Lỗi kết nối mạng Server!");
-        return false;
-    }
-}
-
-// ==========================================
-// 3. VẼ VÀ CẬP NHẬT GIAO DIỆN NGƯỜI DÙNG (RENDER)
-// ==========================================
-function renderUI() {
-    document.getElementById('username').textContent = serverUserState.username || "Hội viên";
-    document.getElementById('user-points').textContent = serverUserState.coins.toLocaleString();
-    document.getElementById('vnd-estimation').textContent = (serverUserState.coins * CONFIG.COIN_TO_VND_RATE).toLocaleString();
-
-    document.getElementById('spin-count-status').textContent = serverUserState.spins;
-    document.getElementById('daily-spin-progress').textContent = `${serverUserState.dailySpinsCount}/${CONFIG.MAX_DAILY_SPINS}`;
-    document.getElementById('daily-ads-progress').textContent = `${serverUserState.dailyAdsCount}/${CONFIG.MAX_DAILY_ADS}`;
-
-    // Đường dẫn chuẩn hóa đồng nhất tham số
-    const refUrlInput = document.getElementById('referral-url');
-    if (refUrlInput) {
-        refUrlInput.value = `https://t.me/SieuCapCayXu_NDTTrung_Bot?start=${serverUserState.id}`;
-    }
-}
-
-// ==========================================
-// 4. XỬ LÝ SỰ KIỆN CLICK CÁC CHỨC NĂNG CHÍNH
-// ==========================================
-
-// --- CHỨC NĂNG VÒNG QUAY MAY MẮN ---
+// LOGIC XOAY VÒNG QUAY MAY MẮN
 document.getElementById('btn-spin').addEventListener('click', async () => {
-    if (serverUserState.spins <= 0) {
+    if (isWheelSpinning) return;
+
+    const now = Date.now();
+    if (serverUserState.lastSpinTimestamp && (now - serverUserState.lastSpinTimestamp < CONFIG.SPIN_COOLDOWN * 1000)) {
+        const secWait = Math.ceil((CONFIG.SPIN_COOLDOWN * 1000 - (now - serverUserState.lastSpinTimestamp)) / 1000);
         triggerHaptic('error');
-        showToast("❌ Bạn đã hết Lượt quay! Vui lòng xem Quảng cáo để nhận thêm.");
-        return;
-    }
-    if (serverUserState.dailySpinsCount >= CONFIG.MAX_DAILY_SPINS) {
-        triggerHaptic('error');
-        showToast("❌ Bạn đã đạt giới hạn 10 lượt quay tối đa trong hôm nay!");
+        showToast(`⏳ Vòng quay đang hồi năng lượng! Vui lòng chờ ${secWait} giây.`);
         return;
     }
 
-    const spinBtn = document.getElementById('btn-spin');
-    spinBtn.disabled = true; 
+    const approved = await postAssetUpdate('spin_start');
+    if (!approved) return;
 
-    const ok = await postAssetUpdate('lucky_spin');
-    if (ok) {
-        triggerHaptic('success');
-        showToast("🎡 Vòng quay đang hoạt động... Chúc mừng bạn đã nhận thưởng thành công!");
-    }
-    
-    setTimeout(() => { spinBtn.disabled = false; }, 1000);
+    isWheelSpinning = true;
+    triggerHaptic('light');
+
+    const randomIndex = Math.floor(Math.random() * 8);
+    const chosenReward = REWARDS_MAPPING[randomIndex];
+
+    const segmentDegrees = 360 / 8;
+    const targetDegrees = (360 * 5) + (randomIndex * segmentDegrees);
+
+    const wheel = document.getElementById('lucky-wheel');
+    wheel.style.transition = 'transform 4s cubic-bezier(0.1, 0.8, 0.3, 1)';
+    wheel.style.transform = `rotate(${targetDegrees}deg)`;
+
+    setTimeout(async () => {
+        const success = await postAssetUpdate('spin_reward', { rewardCoins: chosenReward });
+        if (success) {
+            triggerHaptic('success');
+            showToast(`🎉 Chúc mừng! Bạn quay trúng thưởng: +${chosenReward.toLocaleString()} Xu.`);
+        }
+        wheel.style.transition = 'none';
+        wheel.style.transform = `rotate(${targetDegrees % 360}deg)`;
+        isWheelSpinning = false;
+    }, 4100);
 });
 
-// --- CHỨC NĂNG XEM VIDEO QUẢNG CÁO (ADSGRAM - BẢO MẬT TUẦN TỰ) ---
-document.getElementById('btn-watch-ads').addEventListener('click', async () => {
+// LOGIC XEM QUẢNG CÁO ADSGRAM (ĐỒNG BỘ VÁ LỖ HỔNG)
+document.getElementById('btn-watch-ad').addEventListener('click', async () => {
     if (!window.Adsgram) {
-        showToast("❌ Lỗi: Không thể kết nối tới SDK Adsgram. Vui lòng tải lại trang!");
+        showToast("❌ Lỗi: Không thể kết nối tới SDK Adsgram. Thử lại sau!");
+        return;
+    }
+
+    const now = Date.now();
+    if (serverUserState.lastAdsTimestamp && (now - serverUserState.lastAdsTimestamp < CONFIG.ADS_COOLDOWN * 1000)) {
+        const secWait = Math.ceil((CONFIG.ADS_COOLDOWN * 1000 - (now - serverUserState.lastAdsTimestamp)) / 1000);
+        triggerHaptic('error');
+        showToast(`⏳ Vui lòng chờ thời gian chuẩn bị video kế tiếp sau ${secWait} giây.`);
         return;
     }
 
     if (serverUserState.dailyAdsCount >= CONFIG.MAX_DAILY_ADS) {
         triggerHaptic('error');
-        showToast("❌ Bạn đã xem hết 5 video giới hạn của ngày hôm nay!");
+        showToast("❌ Bạn đã cày hết sạch giới hạn quảng cáo của ngày hôm nay.");
         return;
     }
 
-    const watchBtn = document.getElementById('btn-watch-ads');
+    const watchBtn = document.getElementById('btn-watch-ad');
     watchBtn.disabled = true;
-    showToast("🔄 Đang tải luồng dữ liệu video Adsgram...");
+    showToast("🔄 Đang tải luồng quảng cáo Adsgram...");
 
-    const AdController = window.Adsgram.createAdController('30379'); 
+    // CẤU HÌNH THẬT: Khởi tạo với mã Block ID 30379 của bạn
+    const AdController = window.Adsgram.createAdController('30379');
 
     try {
-        // BƯỚC 1: Gọi xem quảng cáo thực tế
+        // Ép xem xong quảng cáo 15 giây thực tế
         await AdController.show();
         
-        // BƯỚC 2: Chỉ khi xem hết thành công mới gọi Server bằng endpoint đồng nhất mới
-        showToast("⏳ Đang xác thực phần thưởng lên RAM Server...");
+        // Chỉ khi xem xong thành công -> mới gửi lệnh cộng thưởng lên RAM Server
+        showToast("⏳ Đang đồng bộ phần thưởng lên RAM...");
         const ok = await postAssetUpdate('watch_ads_success');
-        
         if (ok) {
-            triggerHaptic('success'); 
-            showToast("🎉 Tuyệt vời! Bạn đã xem hết quảng cáo và nhận +12,000 Xu & +1 Lượt quay!");
+            triggerHaptic('success');
+            showToast("💎 Thành công! Cộng +12,000 Xu & +1 Lượt quay.");
         }
-
     } catch (error) {
-        triggerHaptic('error'); 
+        triggerHaptic('error');
         if (error && error.done === false) {
-            showToast("❌ Bạn đã tắt video quá sớm! Phải xem hết quảng cáo mới được nhận xu.");
+            showToast("❌ Bạn đã tắt video quá sớm! Không nhận được thưởng.");
         } else {
-            showToast("⚠️ Hiện tại không có video quảng cáo khả dụng hoặc hệ thống đang chờ duyệt. Bạn KHÔNG được nhận xu!");
+            showToast("⚠️ Không có video quảng cáo khả dụng hoặc hệ thống đang chờ duyệt. Bạn KHÔNG được nhận xu!");
         }
-        console.error("Luồng Adsgram bị chặn hoặc lỗi tải:", error);
     } finally {
         watchBtn.disabled = false;
     }
 });
 
-// --- CHỨC NĂNG RÚT TIỀN (WITHDRAWAL) ---
-document.getElementById('btn-withdraw').addEventListener('click', async () => {
+// RÚT TIỀN THU NHẬP
+document.getElementById('withdraw-method').addEventListener('change', (e) => {
+    const val = e.target.value;
+    const lbl = document.getElementById('lbl-address');
+    const input = document.getElementById('withdraw-address');
+    if (val === 'momo') { lbl.innerText = "Số điện thoại Ví MoMo:"; input.placeholder = "Ví dụ: 0987654321"; }
+    else if (val === 'bank') { lbl.innerText = "Thông tin Ngân hàng (Tên Bank + STK + Tên chủ thẻ):"; input.placeholder = "Ví dụ: VCB - 1023456789 - NGUYEN VAN A"; }
+    else if (val === 'ton') { lbl.innerText = "Địa chỉ ví TON Network Wallet:"; input.placeholder = "Ví dụ: UQAA...x9zP"; }
+});
+
+document.getElementById('btn-submit-withdraw').addEventListener('click', async () => {
     const method = document.getElementById('withdraw-method').value;
     const address = document.getElementById('withdraw-address').value.trim();
     const amount = parseInt(document.getElementById('withdraw-amount').value, 10);
-    const MIN_COINS_REQUIRED = 50000;
+    const MIN_COINS_REQUIRED = 2000000; 
 
     if (!address || isNaN(amount) || amount <= 0) {
-        triggerHaptic('error');
-        showToast("❌ Vui lòng điền đầy đủ và chính xác thông tin nhận tiền!");
-        return;
+        triggerHaptic('error'); showToast("❌ Vui lòng nhập đầy đủ thông tin hợp lệ!"); return;
     }
-
     if ((method === 'momo' || method === 'bank') && amount < MIN_COINS_REQUIRED) {
-        triggerHaptic('error');
-        showToast(`❌ MoMo/Ngân hàng yêu cầu rút tối thiểu từ ${MIN_COINS_REQUIRED.toLocaleString()} Xu!`);
-        return;
+        triggerHaptic('error'); showToast(`❌ Yêu cầu rút tối thiểu từ ${MIN_COINS_REQUIRED.toLocaleString()} Xu!`); return;
     }
-
     if (amount > serverUserState.coins) {
-        triggerHaptic('error');
-        showToast("❌ Số dư khả dụng trong tài khoản hiện tại không đủ!");
-        return;
+        triggerHaptic('error'); showToast("❌ Số dư tài khoản không đủ!"); return;
     }
 
-    const ok = await postAssetUpdate('withdraw_request', { 
-        withdrawMethod: method, 
-        withdrawAddress: address, 
-        withdrawAmount: amount 
-    });
-    
+    const ok = await postAssetUpdate('withdraw_request', { withdrawMethod: method, withdrawAddress: address, withdrawAmount: amount });
     if (ok) {
         document.getElementById('withdraw-address').value = "";
         document.getElementById('withdraw-amount').value = "";
         triggerHaptic('success');
-        showToast("🎉 Lệnh rút tiền đã được gửi lên Chat duyệt của Admin!");
+        showToast("🎉 Lệnh rút tiền đã gửi tới Admin phê duyệt!");
     }
 });
 
-// --- CHỨC NĂNG SAO CHÉP ĐƯỜNG DẪN GIỚI THIỆU ---
 document.getElementById('btn-copy-ref').addEventListener('click', () => {
     const copyText = document.getElementById('referral-url');
-    if (!copyText || !copyText.value) return;
-
     copyText.select();
     copyText.setSelectionRange(0, 99999); 
-    
-    navigator.clipboard.writeText(copyText.value)
-        .then(() => {
-            triggerHaptic('light'); 
-            showToast("📋 Đã sao chép link mời Bot Telegram thành công!");
-        })
-        .catch(err => {
-            console.error("Lỗi Clipboard API:", err);
-            showToast("❌ Trình duyệt chặn tự động sao chép, hãy tự bôi đen văn bản!");
-        });
+    navigator.clipboard.writeText(copyText.value);
+    triggerHaptic('light');
+    showToast("📋 Đã sao chép link mời Bot thành công!");
 });
 
-window.addEventListener('DOMContentLoaded', fetchUserStatus);
+window.addEventListener('DOMContentLoaded', fetchUserAccountData);
