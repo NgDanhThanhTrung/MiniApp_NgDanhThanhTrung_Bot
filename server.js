@@ -2,7 +2,7 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Monolith Server Engine (Bot Control, RAM Storage, API Hosting & Anti-Sleep)
  * Năm vận hành: 2026
- * Phiên bản: 3.4.0 (Đồng bộ tuyệt đối cấu trúc tài sản RAM & Vá lỗi cổng nhận diện)
+ * Phiên bản: 3.4.5 (Đồng bộ tuyệt đối cấu trúc tài sản RAM & Vá lỗi cổng nhận diện)
  */
 
 const { Telegraf, Markup } = require('telegraf');
@@ -139,7 +139,6 @@ if (fs.existsSync(EXCEL_FILE_PATH)) {
     } catch (err) {}
 }
 
-// Tuyến đường nạp dữ liệu Mini App
 app.post('/api/user-data', (req, res) => {
     const { initData } = req.body;
     const tgUser = verifyTelegramWebAppData(initData);
@@ -147,11 +146,10 @@ app.post('/api/user-data', (req, res) => {
     res.json(syncUserInMemory(tgUser.id, tgUser));
 });
 
-// Tuyến đường cập nhật tài sản tập trung từ Mini App
 app.post('/api/update-assets', async (req, res) => {
     const { initData, action, withdrawMethod, withdrawAddress, withdrawAmount } = req.body;
     
-    // HỖ TRỢ PHÂN LUỒNG MÔI TRƯỜNG: Nếu không có initData (đang test Sandbox) thì bóc tách thẳng ID giả lập
+    // NÂNG CẤP CHUYỂN MÔI TRƯỜNG: Cho phép lấy thông tin giả lập nếu chạy chế độ Sandbox ngoài Web
     let tgUser = verifyTelegramWebAppData(initData);
     if (!tgUser && req.body.isSandboxDev) {
         tgUser = { id: 99999, username: "dev_sandbox", first_name: "Dev Local" };
@@ -186,7 +184,7 @@ app.post('/api/update-assets', async (req, res) => {
     res.json(user);
 });
 
-// CỔNG WEBHOOK TRẢ THƯỞNG ADSGRAM CHUẨN ĐƯỜNG DẪN TRÊN DASHBOARD
+// CỔNG WEBHOOK KHỚP REWARD URL ĐÃ CẤU HÌNH TRÊN DASHBOARD ADSGRAM
 app.all('/api/user/update', async (req, res) => {
     const telegramId = req.query.userId || req.body.telegramId || req.query.telegramId || req.query['[userId]'];
     const action = req.query.action || req.body.action;
