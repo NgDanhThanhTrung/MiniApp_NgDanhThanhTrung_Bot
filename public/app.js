@@ -1,6 +1,6 @@
 /**
  * SIÊU CẤP KIẾM XU - TMA
- * Frontend Logic API Engine (Đồng bộ hóa Polling Engine & Đóng gói POST Data chuẩn Express)
+ * Frontend Logic API Engine (Ép mã hóa URL mã hóa sâu chống lỗi nhận diện)
  * Năm vận hành: 2026
  */
 
@@ -31,7 +31,7 @@ let serverUserState = {
 let isWheelSpinning = false;
 const REWARDS_MAPPING = [10000, 200, 5000, 1000, 50000, 2000, 20000, 500];
 
-// [SỬA LỖI NHẬN DIỆN CỐT LÕI]: Đóng gói header và body chuẩn JSON để Express Server đọc được req.body
+// [VÁ LỖI NHẬN DIỆN]: Sử dụng encodeURIComponent để tránh lỗi rớt ký tự đặc biệt khi truyền tải lên Render
 async function fetchUserAccountData() {
     try {
         const initDataRaw = tg ? tg.initData : "";
@@ -42,14 +42,14 @@ async function fetchUserAccountData() {
             return null;
         }
 
-        // BẮT BUỘC: Phải có 'Content-Type': 'application/json' và dữ liệu phải đưa vào JSON.stringify
         const response = await fetch(`${BACKEND_API_URL}/api/user-data`, {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             },
-            body: JSON.stringify({ initData: initDataRaw })
+            // Ép mã hóa ký tự URL an toàn tuyệt đối
+            body: JSON.stringify({ initData: encodeURIComponent(initDataRaw) })
         });
 
         if (response.ok) {
@@ -57,13 +57,12 @@ async function fetchUserAccountData() {
             updateUI();
             return serverUserState;
         } else {
-            const errData = await response.json().catch(() => ({}));
-            console.error("Server từ chối nhận dạng:", errData.error);
-            showToast("❌ Không thể xác thực danh tính với RAM Server!");
+            console.error("Server từ chối gói tin định danh.");
+            showToast("❌ Không thể kết nối đồng bộ danh tính.");
         }
     } catch (err) {
-        console.error("Lỗi kết nối API:", err);
-        showToast("❌ Mất kết nối đường truyền tới Server!");
+        console.error("Lỗi Fetch:", err);
+        showToast("❌ Lỗi đường truyền mạng lên Render.");
     }
     return null;
 }
@@ -97,7 +96,6 @@ async function postAssetUpdate(actionName, extraPayload = {}) {
 }
 
 function updateUI() {
-    // Hiển thị tên người dùng mượt mà theo đúng cấu trúc tài chính chuyên nghiệp mới
     document.getElementById('username').innerText = serverUserState.username ? `@${serverUserState.username}` : (serverUserState.first_name || "Hội viên");
     document.getElementById('user-points').innerText = serverUserState.coins.toLocaleString();
     
@@ -303,5 +301,4 @@ document.getElementById('btn-share-ref').addEventListener('click', () => {
     }
 });
 
-// Khởi chạy kích hoạt kéo dữ liệu đồng bộ khi tải trang xong
 window.addEventListener('DOMContentLoaded', fetchUserAccountData);
