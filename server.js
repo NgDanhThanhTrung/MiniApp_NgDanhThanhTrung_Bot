@@ -2,7 +2,7 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Monolith Server Engine (RAM Base, Auto-Commit Excel, 24h Auto-Backup & Admin Broadcast)
  * Năm vận hành: 2026
- * Phiên bản: 5.2.0 - Đồng bộ hóa Hệ thống Lưu trữ & Định danh ID
+ * Phiên bản: 5.2.5 - Đồng bộ hóa Hệ thống Lưu trữ & Ngôn từ Chuyên nghiệp
  */
 
 const { Telegraf, Markup } = require('telegraf');
@@ -38,11 +38,11 @@ const SERVER_CONFIG = {
     NEW_USER_BONUS_COINS: 50000,  
     REFERRAL_REWARD_COINS: 50000, 
     AD_REWARD_COINS: 12000,       
-    BACKUP_INTERVAL_MS: 24 * 60 * 60 * 1000 // Gửi báo cáo định kỳ chính xác mỗi 24 giờ
+    BACKUP_INTERVAL_MS: 24 * 60 * 60 * 1000 // Vòng lặp gửi báo cáo định kỳ mỗi 24 giờ
 };
 
 // ==========================================
-// HỆ THỐNG ENGINE CƠ SỞ DỮ LIỆU EXCEL
+// HỆ THỐNG ENGINE CƠ SỞ DỮ LIỆU EXCEL LOCAL
 // ==========================================
 const EXCEL_FILE_PATH = path.join(__dirname, 'DanhSachHoiVien.xlsx');
 let userDatabase = new Map();
@@ -79,7 +79,7 @@ function saveRamToExcelFile() {
 function loadExcelFileToRam() {
     try {
         if (!fs.existsSync(EXCEL_FILE_PATH)) {
-            console.log('ℹ️ [Excel DB] Tạo mới database.');
+            console.log('ℹ️ [Excel DB] Chưa có database. Hệ thống sẽ tự tạo mới khi có người chơi.');
             return;
         }
         const workbook = XLSX.readFile(EXCEL_FILE_PATH);
@@ -103,9 +103,9 @@ function loadExcelFileToRam() {
                 });
             }
         });
-        console.log(`🎉 [Excel DB] Nạp thành công ${userDatabase.size} hội viên lên bộ nhớ.`);
+        console.log(`🎉 [Excel DB] Nạp thành công ${userDatabase.size} hội viên lên bộ nhớ RAM.`);
     } catch (err) {
-        console.error('❌ [Excel DB] Thất bại:', err.message);
+        console.error('❌ [Excel DB] Thất bại khi khôi phục dữ liệu khởi động:', err.message);
     }
 }
 
@@ -157,7 +157,7 @@ app.post('/api/user-data', (req, res) => {
             user = {
                 id: userId,
                 username: tgUser.username || '',
-                first_name: tgUser.first_name || 'Người chơi',
+                first_name: tgUser.first_name || 'Hội viên',
                 coins: SERVER_CONFIG.NEW_USER_BONUS_COINS,
                 spinsLeft: 3,
                 dailySpinsCount: 0,
@@ -168,7 +168,9 @@ app.post('/api/user-data', (req, res) => {
             userDatabase.set(userId, user);
             saveRamToExcelFile();
         } else {
-            if (user.first_name === 'Người chơi' && tgUser.first_name) user.first_name = tgUser.first_name;
+            if ((user.first_name === 'Người chơi' || user.first_name === 'Hội viên') && tgUser.first_name) {
+                user.first_name = tgUser.first_name;
+            }
             if (!user.username && tgUser.username) user.username = tgUser.username;
             checkAndResetDailyLimits(user);
             saveRamToExcelFile();
@@ -191,7 +193,7 @@ app.get('/api/user/update', async (req, res) => {
 
         if (action === 'spin_start') {
             if (user.spinsLeft <= 0) return res.status(400).json({ error: 'Bạn đã hết lượt quay khả dụng!' });
-            if (user.dailySpinsCount >= SERVER_CONFIG.MAX_DAILY_SPINS) return res.status(400).json({ error: 'Đạt giới hạn ngày.' });
+            if (user.dailySpinsCount >= SERVER_CONFIG.MAX_DAILY_SPINS) return res.status(400).json({ error: 'Đạt giới hạn vòng quay hôm nay.' });
             
             user.spinsLeft -= 1;
             user.dailySpinsCount += 1;
@@ -211,38 +213,38 @@ app.get('/api/user/update', async (req, res) => {
             const amount = parseInt(req.query.withdrawAmount, 10);
 
             if ((method === 'momo' || method === 'bank') && amount < SERVER_CONFIG.MIN_WITHDRAW_COINS) {
-                return res.status(400).json({ error: 'Rút tối thiểu từ 2.000.000 Xu.' });
+                return res.status(400).json({ error: 'Hạn mức quyết toán MoMo/Bank tối thiểu là 2,000,000 Xu.' });
             }
-            if (amount > user.coins) return res.status(400).json({ error: 'Không đủ số dư.' });
+            if (amount > user.coins) return res.status(400).json({ error: 'Số dư ví khả dụng không đủ.' });
 
             user.coins -= amount;
             saveRamToExcelFile();
 
-            const notifyText = `🚨 *YÊU CẦU RÚT TIỀN MỚI* 🚨\n\n👤 Hội viên: [${user.first_name}](tg://user?id=${user.id})\n🆔 ID: \`${user.id}\`\n💰 Số xu: *${amount.toLocaleString()} Xu*\n🏦 Hình thức: *${method.toUpperCase()}*\n💳 Nhận: \`${address}\``;
+            const notifyText = `🚨 *YÊU CẦU DUYỆT LỆNH THANH KHOẢN* 🚨\n\n👤 Hội viên: [${user.first_name}](tg://user?id=${user.id})\n🆔 Telegram ID: \`${user.id}\`\n💰 Số lượng xu quy đổi: *${amount.toLocaleString()} Xu*\n🏦 Kênh nhận tiền: *${method.toUpperCase()}*\n💳 Địa chỉ/STK: \`${address}\`\n\n📌 Ban Quản Trị hãy đối chiếu database Excel và quyết toán cho thành viên!`;
             await bot.telegram.sendMessage(ADMIN_ID, notifyText, { parse_mode: 'Markdown' }).catch(()=>{});
             return res.json(user);
         }
-        res.status(400).json({ error: 'Hành động lỗi.' });
+        res.status(400).json({ error: 'Hành động không hợp lệ.' });
     } catch (err) {
-        res.status(500).json({ error: 'Lỗi API.' });
+        res.status(500).json({ error: 'Lỗi API hệ thống.' });
     }
 });
 
-// CỔNG GIAO TIẾP WEBHOOK ĐỒNG BỘ ID CHO ADSGRAM KHÁNG DELAY RENDER
+// CỔNG WEBHOOK REWARD URL ĐỒNG BỘ ID XÁC THỰC ADSGRAM TRỰC TIẾP
 app.get('/api/webhook/adsgram', (req, res) => {
     try {
         const { userId, status } = req.query;
         const uid = parseInt(userId, 10);
 
-        if (!uid || isNaN(uid)) return res.status(400).send('Lỗi ID');
-        if (status !== 'reward') return res.status(200).send('Bỏ qua');
+        if (!uid || isNaN(uid)) return res.status(400).send('Lỗi định danh tài khoản');
+        if (status !== 'reward') return res.status(200).send('Sự kiện bỏ qua');
 
         let user = userDatabase.get(uid);
         const todayStr = new Date().toISOString().split('T')[0];
 
         if (!user) {
             user = {
-                id: uid, username: '', first_name: 'Người chơi',
+                id: uid, username: '', first_name: 'Hội viên',
                 coins: SERVER_CONFIG.NEW_USER_BONUS_COINS, spinsLeft: 3,
                 dailySpinsCount: 0, dailyAdsCount: 0, referralCount: 0, lastActiveDate: todayStr
             };
@@ -250,17 +252,17 @@ app.get('/api/webhook/adsgram', (req, res) => {
         }
 
         checkAndResetDailyLimits(user);
-        if (user.dailyAdsCount >= SERVER_CONFIG.MAX_DAILY_ADS) return res.status(200).send('Hết hạn mức ngày');
+        if (user.dailyAdsCount >= SERVER_CONFIG.MAX_DAILY_ADS) return res.status(200).send('Hạn mức tối đa trong ngày');
 
         user.coins += SERVER_CONFIG.AD_REWARD_COINS;
         user.spinsLeft += 1;
         user.dailyAdsCount += 1;
         
         saveRamToExcelFile();
-        console.log(`[Adsgram Webhook Complete] Khớp và cộng thưởng ID: ${uid}`);
+        console.log(`[Adsgram Webhook Verified] Thành công cộng tài sản an toàn cho Telegram ID: ${uid}`);
         res.status(200).send('OK');
     } catch (err) {
-        res.status(500).send('Lỗi mạng');
+        res.status(500).send('Lỗi máy chủ cục bộ');
     }
 });
 
@@ -278,13 +280,15 @@ bot.start(async (ctx) => {
     if (!user) {
         isNewUser = true;
         user = {
-            id: userId, username: ctx.from.username || '', first_name: ctx.from.first_name || 'Người chơi',
+            id: userId, username: ctx.from.username || '', first_name: ctx.from.first_name || 'Hội viên',
             coins: SERVER_CONFIG.NEW_USER_BONUS_COINS, spinsLeft: 3,
             dailySpinsCount: 0, dailyAdsCount: 0, referralCount: 0, lastActiveDate: todayStr
         };
         userDatabase.set(userId, user);
     } else {
-        if (user.first_name === 'Người chơi' && ctx.from.first_name) user.first_name = ctx.from.first_name;
+        if ((user.first_name === 'Người chơi' || user.first_name === 'Hội viên') && ctx.from.first_name) {
+            user.first_name = ctx.from.first_name;
+        }
         if (!user.username && ctx.from.username) user.username = ctx.from.username;
         checkAndResetDailyLimits(user);
     }
@@ -299,18 +303,24 @@ bot.start(async (ctx) => {
 
             bot.telegram.sendMessage(
                 referrerId,
-                `🎉 *Mời bạn bè thành công!*\nHội viên [${ctx.from.first_name}](tg://user?id=${userId}) đã kích hoạt app.\nVí của bạn tăng: *+50,000 Xu*!`,
+                `🎁 *Ghi Nhận Đối Tác Thành Công!*\n\nHội viên mới *${ctx.from.first_name}* đã tham gia qua liên kết độc quyền của bạn.\nTài khoản của bạn đã được tích lũy hoa hồng thưởng: *+50,000 Xu* vào ví tài sản!`,
                 { parse_mode: 'Markdown' }
             ).catch(()=>{});
         }
     }
 
     saveRamToExcelFile();
-    const welcomeText = `👋 *Xin chào ${ctx.from.first_name}!*\nChào mừng bạn đến với Siêu Cấp Kiếm Xu TMA.\n\n💰 Số dư: *${user.coins.toLocaleString()} Xu*`;
-    return ctx.replyWithMarkdown(welcomeText, Markup.inlineKeyboard([[Markup.button.webApp('🚀 Mở Ứng Dụng Kiếm Xu', MY_APP_LINK)]]));
+    
+    const welcomeText = `✨ *Chào mừng Thượng khách ${ctx.from.first_name} đến với Siêu Cấp Kiếm Xu!* ✨\n\n` +
+                        `Hệ thống TMA đã thiết lập không gian khai thác tài sản kỹ thuật số an toàn trên bộ nhớ RAM Server. Thông tin tài sản hiện tại:\n\n` +
+                        `💳 *Ví Tài Sản:* \`${user.coins.toLocaleString()}\` *Xu*\n` +
+                        `🎡 *Cơ Hội May Mắn:* \`${user.spinsLeft}\` *Lượt quay khả dụng*\n\n` +
+                        `Hãy kích hoạt nút khởi động dưới đây để truy cập Mini App, thực hiện nhiệm vụ đối tác Adsgram và tối ưu hóa nguồn thu nhập thụ động ngay lập tức! 👇`;
+                        
+    return ctx.replyWithMarkdown(welcomeText, Markup.inlineKeyboard([[Markup.button.webApp('🚀 KHỞI ĐỘNG ỨNG DỤNG NGAY', MY_APP_LINK)]]));
 });
 
-// LỆNH ĐIỀU HƯỚNG PHÁT THÔNG BÁO KHÁCH HÀNG TOÀN DIỆN
+// LỆNH TRUYỀN THÔNG BROADCAST TOÀN DIỆN
 bot.command('broadcast', async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
 
@@ -318,15 +328,15 @@ bot.command('broadcast', async (ctx) => {
     if (ctx.message.caption) messageText = ctx.message.caption.substring(10).trim();
 
     if (!messageText && !ctx.message.reply_to_message) {
-        return ctx.replyWithMarkdown('⚠️ *Sai cú pháp!* Hãy nhập thông báo:\n`/broadcast [Nội dung]` hoặc reply tin nhắn/ảnh kèm `/broadcast`');
+        return ctx.replyWithMarkdown('⚠️ *Sai cú pháp!* Hãy nhập thông báo:\n`/broadcast [Nội dung]` hoặc tiến hành reply hình ảnh/tin nhắn kèm cụm lệnh `/broadcast`');
     }
 
     const targetUsers = Array.from(userDatabase.keys());
-    if (targetUsers.length === 0) return ctx.reply('Dữ liệu trống.');
+    if (targetUsers.length === 0) return ctx.reply('Cơ sở dữ liệu RAM hiện đang trống.');
 
     let successCount = 0;
     let failCount = 0;
-    const statusMsg = await ctx.reply(`📣 Đang tiến hành truyền tin tới *${targetUsers.length}* ID...`, { parse_mode: 'Markdown' });
+    const statusMsg = await ctx.reply(`📣 Tiến trình truyền tin chiến dịch đang quét gửi tới *${targetUsers.length}* ID hòm thư hèm...`, { parse_mode: 'Markdown' });
 
     for (const uId of targetUsers) {
         try {
@@ -336,7 +346,7 @@ bot.command('broadcast', async (ctx) => {
                 await bot.telegram.sendMessage(uId, messageText, { parse_mode: 'Markdown' });
             }
             successCount++;
-            await new Promise(resolve => setTimeout(resolve, 35));
+            await new Promise(resolve => setTimeout(resolve, 35)); // Kháng Flood Spam Telegram API
         } catch (err) {
             failCount++;
         }
@@ -345,7 +355,7 @@ bot.command('broadcast', async (ctx) => {
     try {
         await bot.telegram.editMessageText(
             ctx.chat.id, statusMsg.message_id, null, 
-            `🎉 *CHIẾN DỊCH BROADCAST THÀNH CÔNG!*\n\n✅ Thành công: *${successCount} người*\n❌ Thất bại (Block): *${failCount} người*\n📊 Tổng tệp: *${targetUsers.length} người*`,
+            `🎉 *CHIẾN DỊCH BROADCAST HOÀN THÀNH!*\n\n✅ Gửi thành công: *${successCount} người*\n❌ Thất bại (Chặn bot/Xóa tài khoản): *${failCount} người*\n📊 Tổng tệp khách hàng quét: *${targetUsers.length} người*`,
             { parse_mode: 'Markdown' }
         );
     } catch (e) {}
@@ -354,10 +364,10 @@ bot.command('broadcast', async (ctx) => {
 bot.command('saoluu', async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
     saveRamToExcelFile();
-    ctx.replyWithDocument({ source: EXCEL_FILE_PATH, filename: 'DanhSachHoiVien.xlsx' }, { caption: '📊 Báo cáo thủ công.' }).catch(()=>{});
+    ctx.replyWithDocument({ source: EXCEL_FILE_PATH, filename: 'DanhSachHoiVien.xlsx' }, { caption: '📊 Bản xuất cơ sở dữ liệu hội viên thủ công khẩn cấp.' }).catch(()=>{});
 });
 
-// ENGINE HẸN GIỜ SAO LƯU FILE TỰ ĐỘNG GỬI CHO ADMIN SAU MỖI 24 GIỜ
+// ENGINE HẸN GIỜ GỬI SAO LƯU CHO ADMIN ĐÚNG MỖI 24 GIỜ
 function startAutomatic24hBackupScheduler() {
     console.log(`⏰ [Backup Engine] Bắt đầu kích hoạt vòng lặp hẹn giờ 24h.`);
     setInterval(async () => {
@@ -368,12 +378,12 @@ function startAutomatic24hBackupScheduler() {
                 await bot.telegram.sendDocument(
                     ADMIN_ID, 
                     { source: EXCEL_FILE_PATH, filename: `Backup_24h_SieuCapKiemXu.xlsx` },
-                    { caption: `⏰ *BẢN SAO LƯU HỆ THỐNG ĐỊNH KỲ 24H*\n📅 Thời gian: \`${dateStr}\`\n📊 Tổng tệp tài khoản bảo vệ: *${userDatabase.size}* thành viên.`, parse_mode: 'Markdown' }
+                    { caption: `⏰ *BẢN SAO LƯU HỆ THỐNG ĐỊNH KỲ 24H*\n📅 Thời gian thực thi: \`${dateStr}\`\n📊 Tổng tệp tài khoản bảo vệ thành công: *${userDatabase.size}* thành viên.`, parse_mode: 'Markdown' }
                 );
                 console.log('✅ Đã đẩy bản sao lưu Excel tự động 24h về máy Admin.');
             }
         } catch (error) {
-            console.error('Lỗi sao lưu tự động:', error.message);
+            console.error('Lỗi quy trình sao lưu tự động gửi Admin:', error.message);
         }
     }, SERVER_CONFIG.BACKUP_INTERVAL_MS);
 }
@@ -388,7 +398,7 @@ function startSelfPingMechanism() {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[Web Server] Cổng: ${PORT}`));
+app.listen(PORT, () => console.log(`[Web Server] Khởi chạy thành công tại cổng mạng: ${PORT}`));
 
 bot.launch().then(() => {
     startAutomatic24hBackupScheduler();
