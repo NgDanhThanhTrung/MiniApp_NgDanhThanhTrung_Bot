@@ -1,6 +1,6 @@
 /**
  * SIÊU CẤP KIẾM XU - TMA
- * Frontend Logic API Engine (Đồng bộ hóa Polling Engine chống trễ mạng Render)
+ * Frontend Logic API Engine (Đồng bộ hóa Polling Engine & Đóng gói POST Data chuẩn Express)
  * Năm vận hành: 2026
  */
 
@@ -31,7 +31,7 @@ let serverUserState = {
 let isWheelSpinning = false;
 const REWARDS_MAPPING = [10000, 200, 5000, 1000, 50000, 2000, 20000, 500];
 
-// TẢI VÀ ĐỒNG BỘ DỮ LIỆU TÀI KHOẢN TỪ RAM SERVER
+// [SỬA LỖI NHẬN DIỆN CỐT LÕI]: Đóng gói header và body chuẩn JSON để Express Server đọc được req.body
 async function fetchUserAccountData() {
     try {
         const initDataRaw = tg ? tg.initData : "";
@@ -42,9 +42,13 @@ async function fetchUserAccountData() {
             return null;
         }
 
+        // BẮT BUỘC: Phải có 'Content-Type': 'application/json' và dữ liệu phải đưa vào JSON.stringify
         const response = await fetch(`${BACKEND_API_URL}/api/user-data`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
             body: JSON.stringify({ initData: initDataRaw })
         });
 
@@ -52,14 +56,19 @@ async function fetchUserAccountData() {
             serverUserState = await response.json();
             updateUI();
             return serverUserState;
+        } else {
+            const errData = await response.json().catch(() => ({}));
+            console.error("Server từ chối nhận dạng:", errData.error);
+            showToast("❌ Không thể xác thực danh tính với RAM Server!");
         }
     } catch (err) {
-        console.error("Lỗi tải data:", err);
+        console.error("Lỗi kết nối API:", err);
+        showToast("❌ Mất kết nối đường truyền tới Server!");
     }
     return null;
 }
 
-// GỬI CẬP NHẬT TÀI SẢN (Dành riêng cho Vòng quay & Rút tiền)
+// GỬI CẬP NHẬT TÀI SẢN (Vòng quay & Rút tiền)
 async function postAssetUpdate(actionName, extraPayload = {}) {
     try {
         const initDataRaw = tg ? tg.initData : "";
@@ -88,6 +97,7 @@ async function postAssetUpdate(actionName, extraPayload = {}) {
 }
 
 function updateUI() {
+    // Hiển thị tên người dùng mượt mà theo đúng cấu trúc tài chính chuyên nghiệp mới
     document.getElementById('username').innerText = serverUserState.username ? `@${serverUserState.username}` : (serverUserState.first_name || "Hội viên");
     document.getElementById('user-points').innerText = serverUserState.coins.toLocaleString();
     
@@ -99,9 +109,6 @@ function updateUI() {
     
     const adsRemaining = Math.max(0, CONFIG.MAX_DAILY_ADS - serverUserState.dailyAdsCount);
     document.getElementById('txt-daily-ads').innerText = `${adsRemaining}/${CONFIG.MAX_DAILY_ADS}`;
-
-    const txtRefCount = document.getElementById('txt-referral-count');
-    if (txtRefCount) txtRefCount.innerText = `${serverUserState.referralCount || 0} người`;
 
     document.getElementById('referral-url').value = `https://t.me/SieuCapCayXu_NDTTrung_Bot?start=${serverUserState.id}`;
 }
@@ -135,7 +142,6 @@ async function pollForAdReward(previousCoins, maxAttempts = 6) {
         attempts++;
         const updatedData = await fetchUserAccountData();
         
-        // Phát hiện ví RAM tăng tiền thành công từ Webhook Adsgram
         if (updatedData && updatedData.coins > previousCoins) {
             clearInterval(interval);
             triggerHaptic('success');
@@ -211,10 +217,7 @@ document.getElementById('btn-watch-ad').addEventListener('click', async () => {
         try {
             await AdController.show();
             const currentCoins = serverUserState.coins;
-            
-            // Kích hoạt bộ quét thông minh đợi Webhook đổ tiền về RAM
             pollForAdReward(currentCoins);
-
         } catch (error) {
             triggerHaptic('error');
             if (error && error.done === false) {
@@ -300,4 +303,5 @@ document.getElementById('btn-share-ref').addEventListener('click', () => {
     }
 });
 
+// Khởi chạy kích hoạt kéo dữ liệu đồng bộ khi tải trang xong
 window.addEventListener('DOMContentLoaded', fetchUserAccountData);
