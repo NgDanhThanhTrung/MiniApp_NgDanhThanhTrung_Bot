@@ -1,6 +1,6 @@
 /**
  * SIÊU CẤP KIẾM XU - TMA
- * Frontend Logic API Engine (Vá bảo mật chống Bug Xu tuyệt đối)
+ * Frontend Logic API Engine (Đồng bộ hóa Polling Engine chống trễ mạng Render)
  * Năm vận hành: 2026
  */
 
@@ -39,7 +39,7 @@ async function fetchUserAccountData() {
             console.warn("📡 Môi trường Sandbox Local.");
             serverUserState = { id: 99999, first_name: "Dev Local", coins: 75000, spinsLeft: 5, dailySpinsCount: 2, dailyAdsCount: 1, referralCount: 3 };
             updateUI();
-            return;
+            return null;
         }
 
         const response = await fetch(`${BACKEND_API_URL}/api/user-data`, {
@@ -51,10 +51,12 @@ async function fetchUserAccountData() {
         if (response.ok) {
             serverUserState = await response.json();
             updateUI();
+            return serverUserState;
         }
     } catch (err) {
         console.error("Lỗi tải data:", err);
     }
+    return null;
 }
 
 // GỬI CẬP NHẬT TÀI SẢN (Dành riêng cho Vòng quay & Rút tiền)
@@ -101,7 +103,6 @@ function updateUI() {
     const txtRefCount = document.getElementById('txt-referral-count');
     if (txtRefCount) txtRefCount.innerText = `${serverUserState.referralCount || 0} người`;
 
-    // Cập nhật link giới thiệu đồng bộ với Bot Username thật của bạn
     document.getElementById('referral-url').value = `https://t.me/SieuCapCayXu_NDTTrung_Bot?start=${serverUserState.id}`;
 }
 
@@ -123,6 +124,30 @@ function showToast(message) {
         container.style.opacity = '0';
         container.style.transform = 'translate(-50%, 20px)';
     }, 3000);
+}
+
+// BỘ LỌC ĐỒNG BỘ KHÁNG TRỄ (POLLING SYSTEM)
+async function pollForAdReward(previousCoins, maxAttempts = 6) {
+    let attempts = 0;
+    showToast("⏳ Hệ thống đang kiểm tra xác thực phần thưởng Ads...");
+
+    const interval = setInterval(async () => {
+        attempts++;
+        const updatedData = await fetchUserAccountData();
+        
+        // Phát hiện ví RAM tăng tiền thành công từ Webhook Adsgram
+        if (updatedData && updatedData.coins > previousCoins) {
+            clearInterval(interval);
+            triggerHaptic('success');
+            showToast("💎 Thành công! Đã nhận +12,000 Xu & +1 Lượt quay.");
+            document.getElementById('btn-watch-ad').disabled = false;
+        } 
+        else if (attempts >= maxAttempts) {
+            clearInterval(interval);
+            showToast("⚠️ Mạng Render trễ, số dư của bạn sẽ tự cập nhật sau ít giây nữa.");
+            document.getElementById('btn-watch-ad').disabled = false;
+        }
+    }, 1500); 
 }
 
 // LOGIC VÒNG QUAY MAY MẮN
@@ -168,7 +193,7 @@ document.getElementById('btn-spin').addEventListener('click', async () => {
     }, 4100);
 });
 
-// LOGIC XEM QUẢNG CÁO ADSGRAM (BẢO MẬT: CHỈ CẬP NHẬT THEO WEBHOOK TỪ SERVER)
+// LOGIC XEM QUẢNG CÁO ADSGRAM (ĐỒNG BỘ WEBHOOK WEB)
 document.getElementById('btn-watch-ad').addEventListener('click', async () => {
     if (serverUserState.dailyAdsCount >= CONFIG.MAX_DAILY_ADS) {
         triggerHaptic('error');
@@ -184,17 +209,11 @@ document.getElementById('btn-watch-ad').addEventListener('click', async () => {
         const AdController = window.Adsgram.createAdController('30388'); 
 
         try {
-            await AdController.show(); // Kích hoạt chạy Ads thực tế toàn màn hình
+            await AdController.show();
+            const currentCoins = serverUserState.coins;
             
-            showToast("⏳ Hoàn tất quảng cáo! Đang đợi hệ thống xác thực...");
-            
-            // Đợi 2.5 giây để Server tiếp nhận Webhook từ Adsgram bắn về trước khi client kéo dữ liệu mới
-            setTimeout(async () => {
-                await fetchUserAccountData();
-                triggerHaptic('success');
-                showToast("💎 Đã cập nhật số dư từ cổng đối tác!");
-                watchBtn.disabled = false;
-            }, 2500);
+            // Kích hoạt bộ quét thông minh đợi Webhook đổ tiền về RAM
+            pollForAdReward(currentCoins);
 
         } catch (error) {
             triggerHaptic('error');
