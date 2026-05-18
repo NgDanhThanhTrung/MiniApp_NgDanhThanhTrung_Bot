@@ -2,7 +2,7 @@
  * SIÊU CẤP KIẾM XU - TMA
  * Monolith Server Engine (RAM Base, Auto-Commit Excel, 24h Auto-Backup & Admin Broadcast)
  * Năm vận hành: 2026
- * Phiên bản: 5.5.0 - Vá lỗi đồng bộ ID & Lưu trữ cứng Excel
+ * Phiên bản: 5.6.0 - Tối ưu hóa Bộ giải mã nhận diện ID Telegram nâng cao
  */
 
 const { Telegraf, Markup } = require('telegraf');
@@ -77,7 +77,7 @@ function saveRamToExcelFile() {
 function loadExcelFileToRam() {
     try {
         if (!fs.existsSync(EXCEL_FILE_PATH)) {
-            console.log('ℹ️ [Excel DB] Chưa có database, khởi tạo mới khi có người chơi.');
+            console.log('ℹ [Excel DB] Khởi tạo database mới.');
             return;
         }
         const workbook = XLSX.readFile(EXCEL_FILE_PATH);
@@ -101,9 +101,9 @@ function loadExcelFileToRam() {
                 });
             }
         });
-        console.log(`🎉 [Excel DB] Khôi phục thành công ${userDatabase.size} hội viên lên bộ nhớ RAM.`);
+        console.log(`🎉 [Excel DB] Khôi phục thành công ${userDatabase.size} hội viên.`);
     } catch (err) {
-        console.error('❌ [Excel DB] Thất bại khi nạp file dữ liệu:', err.message);
+        console.error('❌ [Excel DB] Lỗi nạp dữ liệu:', err.message);
     }
 }
 
@@ -120,18 +120,33 @@ function checkAndResetDailyLimits(user) {
     return false;
 }
 
-function verifyTelegramWebAppData(initDataString) {
+// BỘ GIẢI MÃ VÀ KIỂM CHỨNG CHỮ KÝ TELEGRAM NÂNG CAO (CHỐNG LỖI URL ENCODED)
+function parseAndVerifyTelegramData(initDataString) {
     try {
         if (!initDataString) return null;
-        const urlParams = new URLSearchParams(initDataString);
+        
+        // Giải mã chuỗi URL phòng trường hợp Frontend gửi chuỗi thô chưa xử lý
+        const decodedString = decodeURIComponent(initDataString);
+        const urlParams = new URLSearchParams(decodedString);
         const hash = urlParams.get('hash');
         urlParams.delete('hash');
-        const sortedParams = Array.from(urlParams.entries()).map(([key, value]) => `${key}=${value}`).sort().join('\n');
+        
+        const sortedParams = Array.from(urlParams.entries())
+            .map(([key, value]) => `${key}=${value}`)
+            .sort()
+            .join('\n');
+            
         const secretKey = crypto.createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
         const calculatedHash = crypto.createHmac('sha256', secretKey).update(sortedParams).digest('hex');
-        if (calculatedHash === hash) return JSON.parse(urlParams.get('user'));
+        
+        if (calculatedHash === hash) {
+            return JSON.parse(urlParams.get('user'));
+        }
         return null;
-    } catch (e) { return null; }
+    } catch (e) {
+        console.error("[Auth Error] Thất bại khi bóc tách initData:", e.message);
+        return null;
+    }
 }
 
 // ==========================================
@@ -141,11 +156,14 @@ app.get('/health', (req, res) => {
     res.json({ status: 'OK', totalUsers: userDatabase.size, uptime: process.uptime() });
 });
 
+// [CẬP NHẬT LOGIC NHẬN DIỆN]: Giải mã sâu, bắt lỗi rỗng dữ liệu
 app.post('/api/user-data', (req, res) => {
     try {
         const { initData } = req.body;
-        const tgUser = verifyTelegramWebAppData(initData);
-        if (!tgUser) return res.status(403).json({ error: 'Xác thực Telegram thất bại.' });
+        if (!initData) return res.status(400).json({ error: 'Missing initData body payload.' });
+
+        const tgUser = parseAndVerifyTelegramData(initData);
+        if (!tgUser) return res.status(403).json({ error: 'Xác thực cấu trúc dữ liệu Telegram thất bại.' });
 
         const userId = parseInt(tgUser.id, 10);
         const todayStr = new Date().toISOString().split('T')[0];
@@ -175,7 +193,8 @@ app.post('/api/user-data', (req, res) => {
         }
         res.json(user);
     } catch (err) {
-        res.status(500).json({ error: 'Lỗi server đồng bộ.' });
+        console.error("Crash tại endpoint /api/user-data:", err.message);
+        res.status(500).json({ error: 'Lỗi hệ thống đồng bộ danh tính.' });
     }
 });
 
@@ -228,7 +247,7 @@ app.get('/api/user/update', async (req, res) => {
     }
 });
 
-// CỔNG WEBHOOK REWARD URL XÁC THỰC CHO ADSGRAM
+// WEBHOOK REWARD URL XÁC THỰC CHO ADSGRAM
 app.get('/api/webhook/adsgram', (req, res) => {
     try {
         const { userId, status } = req.query;
@@ -257,7 +276,6 @@ app.get('/api/webhook/adsgram', (req, res) => {
         user.dailyAdsCount += 1;
         
         saveRamToExcelFile();
-        console.log(`[Adsgram Webhook] Đã quyết toán cộng thưởng cho ID: ${uid}`);
         res.status(200).send('OK');
     } catch (err) {
         res.status(500).send('Lỗi máy chủ');
@@ -365,7 +383,6 @@ bot.command('broadcast', async (ctx) => {
 });
 
 function startAutomatic24hBackupScheduler() {
-    console.log(`⏰ [Backup Engine] Kích hoạt bộ đếm gửi dữ liệu tự động 24h.`);
     setInterval(async () => {
         try {
             saveRamToExcelFile();
